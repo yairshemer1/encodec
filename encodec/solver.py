@@ -203,15 +203,13 @@ class Solver(object):
         name = label + f" | Epoch {epoch + 1}"
         logprog = LogProgress(logger, data_loader, updates=self.num_prints, name=name)
         for i, data in enumerate(logprog):
-            clean = [x.to(self.device) for x in data]
-            sources = torch.stack([clean, clean])
-            clean, _ = sources
-            # if not cross_valid:
-            #     sources = torch.stack([noisy - clean, clean])
-            #     sources = self.augment(sources)
-            #     noise, clean = sources
-            #     noisy = noise + clean
-            estimate = self.dmodel(clean)
+            noisy, clean = [x.to(self.device) for x in data]
+            if not cross_valid:
+                sources = torch.stack([noisy - clean, clean])
+                sources = self.augment(sources)
+                noise, clean = sources
+                noisy = noise + clean
+            estimate = self.dmodel(noisy)
             # apply a loss function after each layer
             with torch.autograd.set_detect_anomaly(True):
                 if self.args.loss == 'l1':

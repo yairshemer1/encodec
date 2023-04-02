@@ -56,13 +56,13 @@ def evaluate(args, model=None, data_loader=None):
             iterator = LogProgress(logger, data_loader, name="Eval estimates")
             for i, data in enumerate(iterator):
                 # Get batch data
-                clean = [x.to(args.device) for x in data]
+                noisy, clean = [x.to(args.device) for x in data]
                 # If device is CPU, we do parallel evaluation in each CPU worker.
                 if args.device == 'cpu':
                     pendings.append(
-                        pool.submit(_estimate_and_run_metrics, clean, model, args))
+                        pool.submit(_estimate_and_run_metrics, clean, model, noisy, args))
                 else:
-                    estimate = get_estimate(model, clean, args)
+                    estimate = get_estimate(model, noisy, args)
                     estimate = estimate.cpu()
                     clean = clean.cpu()
                     pendings.append(
@@ -80,8 +80,8 @@ def evaluate(args, model=None, data_loader=None):
     return pesq, stoi
 
 
-def _estimate_and_run_metrics(clean, model, args):
-    estimate = get_estimate(model, clean, args)
+def _estimate_and_run_metrics(clean, model, noisy, args):
+    estimate = get_estimate(model, noisy, args)
     return _run_metrics(clean, estimate, args, sr=model.sample_rate)
 
 

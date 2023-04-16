@@ -165,13 +165,14 @@ class Solver(object):
 
             # evaluate and enhance samples every 'eval_every' argument number of epochs
             # also evaluate on last epoch
+            self.tt_loader.epoch = epoch
             if ((epoch + 1) % self.eval_every == 0 or epoch == self.epochs - 1) and self.tt_loader:
                 # Evaluate on the testset
                 logger.info('-' * 70)
                 logger.info('Evaluating on the test set...')
                 # We switch to the best known model for testing
                 with swap_state(self.model, self.best_state):
-                    pesq, stoi = evaluate(args=self.args, epoch=epoch, model=self.model, data_loader=self.tt_loader)
+                    pesq, stoi = evaluate(args=self.args, model=self.model, data_loader=self.tt_loader)
 
                 metrics.update({'pesq': pesq, 'stoi': stoi})
 
@@ -179,7 +180,7 @@ class Solver(object):
                 logger.info('Enhance and save samples...')
                 enhance(self.args, self.model, self.samples_dir)
             if self.args.wandb:
-                wandb.log(metrics, step=epoch)
+                wandb.log(metrics, step=epoch, commit=False)
             self.history.append(metrics)
             info = " | ".join(f"{k.capitalize()} {v:.5f}" for k, v in metrics.items())
             logger.info('-' * 70)

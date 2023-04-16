@@ -34,7 +34,7 @@ parser.add_argument('-v', '--verbose', action='store_const', const=logging.DEBUG
                     default=logging.INFO, help="More loggging")
 
 
-def evaluate(args, epoch=None, model=None, data_loader=None):
+def evaluate(args, model=None, data_loader=None):
     total_pesq = 0
     total_stoi = 0
     total_cnt = 0
@@ -60,13 +60,13 @@ def evaluate(args, epoch=None, model=None, data_loader=None):
                 # If device is CPU, we do parallel evaluation in each CPU worker.
                 if args.device == 'cpu':
                     pendings.append(
-                        pool.submit(_estimate_and_run_metrics, clean, model, args, epoch))
+                        pool.submit(_estimate_and_run_metrics, clean, model, args, data_loader.epoch))
                 else:
                     estimate = get_estimate(model, clean, args)
                     estimate = estimate.cpu()
                     clean = clean.cpu()
                     pendings.append(
-                        pool.submit(_run_metrics, clean, estimate, args, model.sample_rate, epoch))
+                        pool.submit(_run_metrics, clean, estimate, args, model.sample_rate, data_loader.epoch))
                 total_cnt += clean.shape[0]
 
         for pending in LogProgress(logger, pendings, updates, name="Eval metrics"):

@@ -117,7 +117,7 @@ def enhance(args, model=None, local_out_dir=None):
     else:
         out_dir = args.out_dir
 
-    dset = get_dataset(args, model.sample_rate, model.chin)
+    dset = get_dataset(args, model.sample_rate, 1)
     if dset is None:
         return
     loader = distrib.loader(dset, batch_size=1)

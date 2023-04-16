@@ -88,9 +88,9 @@ def _estimate_and_run_metrics(clean, model, args):
 def _run_metrics(clean, estimate, args, sr):
     estimate = estimate.numpy()[:, 0]
     clean = clean.numpy()[:, 0]
-    # if args.wandb:
-    # wandb.log({"estimated": wandb.Audio(estimate.flatten(), caption="estimated", sample_rate=sr)})
-    # wandb.log({"target": wandb.Audio(clean.flatten(), caption="target", sample_rate=sr)})
+    if args.wandb:
+        wandb.log({"estimated": wandb.Audio(estimate.flatten(), caption="estimated", sample_rate=sr)})
+        wandb.log({"target": wandb.Audio(clean.flatten(), caption="target", sample_rate=sr)})
     if args.pesq:
         pesq_i = get_pesq(clean, estimate, sr=sr)
     else:

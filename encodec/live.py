@@ -11,7 +11,7 @@ import sys
 import sounddevice as sd
 import torch
 
-from .demucs import DemucsStreamer
+from .model import DemucsStreamer
 from .pretrained import add_model_flags, get_model
 from .utils import bold
 

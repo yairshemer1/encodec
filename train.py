@@ -21,14 +21,23 @@ def run(args):
 
     from encodec import distrib
     from encodec.data import CleanSet
-    from encodec.demucs import Demucs
+    from encodec.model import EncodecModel
     from encodec.solver import Solver
+    import encodec.modules as m
     distrib.init(args)
 
     # torch also initialize cuda seed if available
     torch.manual_seed(args.seed)
 
-    model = Demucs(**args.demucs, sample_rate=args.sample_rate)
+    # model = Demucs(**args.demucs, sample_rate=args.sample_rate)
+    encoder = m.SEANetEncoder(channels=1, norm='weight_norm', causal=True)
+    decoder = m.SEANetDecoder(channels=1, norm='weight_norm', causal=True)
+    model = EncodecModel(
+            encoder,
+            decoder,
+            normalize=False,
+            segment=None,
+        )
 
     if args.show:
         logger.info(model)

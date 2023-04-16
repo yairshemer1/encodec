@@ -10,3 +10,4 @@ torchaudio
 torch
 julius
 wandb
+einops

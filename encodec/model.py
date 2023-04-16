@@ -491,7 +491,7 @@ class EncodecModel(nn.Module):
                  decoder: m.SEANetDecoder,
                  # quantizer: qt.ResidualVectorQuantizer,
                  target_bandwidths: tp.List[float] = [3., 6., 12., 24.],
-                 sample_rate: int = 48_000,
+                 sample_rate: int = 16_000,
                  channels: int = 2,
                  normalize: bool = False,
                  segment: tp.Optional[float] = None,

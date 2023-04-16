@@ -142,6 +142,13 @@ class SEANetEncoder(nn.Module):
         ]
 
         self.model = nn.Sequential(*model)
+        self.model.apply(self._init_weights)
+
+    @staticmethod
+    def _init_weights(m):
+        if isinstance(m, nn.Linear):
+            nn.init.xavier_uniform(m.weight)
+            m.bias.data.fill_(0.01)
 
     def forward(self, x):
         return self.model(x)
@@ -236,6 +243,13 @@ class SEANetDecoder(nn.Module):
                 final_act(**final_activation_params)
             ]
         self.model = nn.Sequential(*model)
+        self.model.apply(self._init_weights)
+
+    @staticmethod
+    def _init_weights(m):
+        if isinstance(m, nn.Linear):
+            nn.init.xavier_uniform(m.weight)
+            m.bias.data.fill_(0.01)
 
     def forward(self, z):
         y = self.model(z)

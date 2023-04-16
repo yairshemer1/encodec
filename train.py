@@ -86,7 +86,9 @@ def run(args):
 
     # init WandB
     if args.wandb:
-        wandb.init(project="encodec-reconstruct", name="test_1")
+        from datetime import datetime
+        name = datetime.strftime(datetime.now(), format="%Y%m%d%H%M%S")
+        wandb.init(project="encodec-reconstruct", name=name)
 
     # Construct Solver
     solver = Solver(data, model, optimizer, args)

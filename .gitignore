@@ -9,6 +9,7 @@ models/
 private/
 dist
 build
+conf
 *.egg-info
 *.th
 launch_master.sh

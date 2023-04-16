@@ -54,18 +54,18 @@ group.add_argument("--noisy_json", type=str, default=None,
                    help="json file including noisy wav files")
 
 
-def get_estimate(model, noisy, args):
+def get_estimate(model, clean, args):
     torch.set_num_threads(1)
     if args.streaming:
         streamer = DemucsStreamer(model, dry=args.dry)
         with torch.no_grad():
             estimate = torch.cat([
-                streamer.feed(noisy[0]),
+                streamer.feed(clean[0]),
                 streamer.flush()], dim=1)[None]
     else:
         with torch.no_grad():
-            estimate = model(noisy)
-            estimate = (1 - args.dry) * estimate + args.dry * noisy
+            estimate = model(clean)
+            estimate = (1 - args.dry) * estimate + args.dry * clean
     return estimate
 
 

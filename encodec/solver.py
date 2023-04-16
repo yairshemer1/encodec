@@ -171,7 +171,7 @@ class Solver(object):
                 logger.info('Evaluating on the test set...')
                 # We switch to the best known model for testing
                 with swap_state(self.model, self.best_state):
-                    pesq, stoi = evaluate(self.args, self.model, self.tt_loader)
+                    pesq, stoi = evaluate(args=self.args, epoch=epoch, model=self.model, data_loader=self.tt_loader)
 
                 metrics.update({'pesq': pesq, 'stoi': stoi})
 

@@ -34,7 +34,7 @@ parser.add_argument('-v', '--verbose', action='store_const', const=logging.DEBUG
                     default=logging.INFO, help="More loggging")
 
 
-def evaluate(args, model=None, data_loader=None):
+def evaluate(args, epoch=None, model=None, data_loader=None):
     total_pesq = 0
     total_stoi = 0
     total_cnt = 0
@@ -60,13 +60,13 @@ def evaluate(args, model=None, data_loader=None):
                 # If device is CPU, we do parallel evaluation in each CPU worker.
                 if args.device == 'cpu':
                     pendings.append(
-                        pool.submit(_estimate_and_run_metrics, clean, model, args))
+                        pool.submit(_estimate_and_run_metrics, clean, model, args, epoch))
                 else:
                     estimate = get_estimate(model, clean, args)
                     estimate = estimate.cpu()
                     clean = clean.cpu()
                     pendings.append(
-                        pool.submit(_run_metrics, clean, estimate, args, model.sample_rate))
+                        pool.submit(_run_metrics, clean, estimate, args, model.sample_rate, epoch))
                 total_cnt += clean.shape[0]
 
         for pending in LogProgress(logger, pendings, updates, name="Eval metrics"):
@@ -80,17 +80,18 @@ def evaluate(args, model=None, data_loader=None):
     return pesq, stoi
 
 
-def _estimate_and_run_metrics(clean, model, args):
+def _estimate_and_run_metrics(clean, model, args, epoch):
     estimate = get_estimate(model, clean, args)
-    return _run_metrics(clean, estimate, args, sr=model.sample_rate)
+    return _run_metrics(clean, estimate, args, sr=model.sample_rate, epoch=epoch)
 
 
-def _run_metrics(clean, estimate, args, sr):
+def _run_metrics(clean, estimate, args, sr, epoch):
     estimate = estimate.numpy()[:, 0]
     clean = clean.numpy()[:, 0]
     if args.wandb:
-        wandb.log({"estimated": wandb.Audio(estimate.flatten(), caption="estimated", sample_rate=sr)})
-        wandb.log({"target": wandb.Audio(clean.flatten(), caption="target", sample_rate=sr)})
+        assert epoch, "epoch must not be None"
+        wandb.log({"estimated": wandb.Audio(estimate.flatten(), caption="estimated", sample_rate=sr)}, step=epoch)
+        wandb.log({"target": wandb.Audio(clean.flatten(), caption="target", sample_rate=sr)}, step=epoch)
     if args.pesq:
         pesq_i = get_pesq(clean, estimate, sr=sr)
     else:

@@ -15,7 +15,7 @@ import sys
 import torchaudio
 from torch.nn import functional as F
 import sys
-sys.path.append("/content/drive/My Drive/AudioLab")
+sys.path.append("/content/drive/My Drive/AudioLab/encodec")
 from encodec.dsp import convert_audio
 
 Info = namedtuple("Info", ["length", "sample_rate", "channels"])

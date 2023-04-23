@@ -12,6 +12,7 @@ import wandb
 import hydra
 
 from encodec.executor import start_ddp_workers
+from encodec.model import MultiScaleDiscriminator
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +39,7 @@ def run(args):
             normalize=False,
             segment=None,
         )
+    msd = MultiScaleDiscriminator()
 
     if args.show:
         logger.info(model)
@@ -80,6 +82,7 @@ def run(args):
     # optimizer
     if args.optim == "adam":
         optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, betas=(0.9, args.beta2))
+        optimizer_msd = torch.optim.Adam(msd.parameters(), lr=args.lr, betas=(0.9, args.beta2))
     else:
         logger.fatal('Invalid optimizer %s', args.optim)
         os._exit(1)
@@ -91,7 +94,7 @@ def run(args):
         wandb.init(project="encodec-reconstruct", name=name)
 
     # Construct Solver
-    solver = Solver(data, model, optimizer, args)
+    solver = Solver(data=data, model=model, msd=msd, optimizer=optimizer, optimizer_msd=optimizer_msd, args=args)
     solver.train()
     if args.wandb:
         wandb.finish()

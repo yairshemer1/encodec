@@ -17,6 +17,7 @@ import torch.nn.functional as F
 from . import augment, distrib, pretrained
 from .enhance import enhance
 from .evaluate import evaluate
+from .model import MultiScaleDiscriminator, discriminator_loss, feature_loss
 from .stft_loss import MultiResolutionSTFTLoss
 from .utils import bold, copy_state, pull_metric, serialize_model, swap_state, LogProgress
 
@@ -24,13 +25,15 @@ logger = logging.getLogger(__name__)
 
 
 class Solver(object):
-    def __init__(self, data, model, optimizer, args):
+    def __init__(self, data, model, msd, optimizer, optimizer_msd, args):
         self.tr_loader = data['tr_loader']
         self.cv_loader = data['cv_loader']
         self.tt_loader = data['tt_loader']
         self.model = model
+        self.msd = msd
         self.dmodel = distrib.wrap(model)
         self.optimizer = optimizer
+        self.optimizer_msd = optimizer_msd
 
         # data augment
         augments = []
@@ -72,6 +75,7 @@ class Solver(object):
     def _serialize(self):
         package = {}
         package['model'] = serialize_model(self.model)
+        package['msd'] = serialize_model(self.msd)
         package['optimizer'] = self.optimizer.state_dict()
         package['history'] = self.history
         package['best_state'] = self.best_state
@@ -106,8 +110,10 @@ class Solver(object):
             logger.info(f'Loading checkpoint model: {load_from}')
             package = torch.load(load_from, 'cpu')
             if load_best:
+                self.msd.load_state_dict(package['msd'])
                 self.model.load_state_dict(package['best_state'])
             else:
+                self.msd.load_state_dict(package['msd']['state'])
                 self.model.load_state_dict(package['model']['state'])
             if 'optimizer' in package and not load_best:
                 self.optimizer.load_state_dict(package['optimizer'])
@@ -134,6 +140,7 @@ class Solver(object):
         for epoch in range(len(self.history), self.epochs):
             # Train one epoch
             self.model.train()
+            self.msd.train()
             start = time.time()
             logger.info('-' * 70)
             logger.info("Training...")
@@ -199,7 +206,6 @@ class Solver(object):
 
         # get a different order for distributed training, otherwise this will get ignored
         data_loader.epoch = epoch
-
         label = ["Train", "Valid"][cross_valid]
         name = label + f" | Epoch {epoch + 1}"
         logprog = LogProgress(logger, data_loader, updates=self.num_prints, name=name)
@@ -221,13 +227,22 @@ class Solver(object):
                     sc_loss, mag_loss = self.mrstftloss(estimate.squeeze(1), clean.squeeze(1))
                     loss += sc_loss + mag_loss
 
+                y_ds_hat_r, y_ds_hat_g, fmap_s_r, fmap_s_g = self.msd(clean.squeeze(1), estimate.squeeze(1).detach())
+                loss_disc_s, losses_disc_s_r, losses_disc_s_g = discriminator_loss(y_ds_hat_r, y_ds_hat_g)
+                loss_fm_f = feature_loss(fmap_s_r, fmap_s_g)
+                msd_loss = loss_fm_f + loss_disc_s
                 # optimize model in training mode
                 if not cross_valid:
+                    # msd loss
+                    self.optimizer_msd.zero_grad()
+                    msd_loss.backward()
+                    self.optimizer_msd.step()
+                    # reconstruction loss
                     self.optimizer.zero_grad()
                     loss.backward()
                     self.optimizer.step()
 
-            total_loss += loss.item()
+            total_loss += loss.item() + msd_loss.item()
             logprog.update(loss=format(total_loss / (i + 1), ".5f"))
             # Just in case, clear some memory
             del loss, estimate

@@ -8,9 +8,10 @@
 import math
 import time
 
-import torch as th
+import torch
 from torch import nn
 from torch.nn import functional as F
+from torch.nn.utils import spectral_norm, weight_norm
 from pathlib import Path
 import typing as tp
 import numpy as np
@@ -21,7 +22,7 @@ from . import quantization as qt
 from . import modules as m
 from .utils import _check_checksum, _linear_overlap_add, _get_checkpoint_url
 
-EncodedFrame = tp.Tuple[th.Tensor, tp.Optional[th.Tensor]]
+EncodedFrame = tp.Tuple[torch.Tensor, tp.Optional[torch.Tensor]]
 
 ROOT_URL = 'https://dl.fbaipublicfiles.com/encodec/v0/'
 
@@ -46,8 +47,8 @@ class LMModel(nn.Module):
         self.emb = nn.ModuleList([nn.Embedding(card + 1, dim) for _ in range(n_q)])
         self.linears = nn.ModuleList([nn.Linear(dim, card) for _ in range(n_q)])
 
-    def forward(self, indices: th.Tensor,
-                states: tp.Optional[tp.List[th.Tensor]] = None, offset: int = 0):
+    def forward(self, indices: torch.Tensor,
+                states: tp.Optional[tp.List[torch.Tensor]] = None, offset: int = 0):
         """
         Args:
             indices (torch.Tensor): indices from the previous time step. Indices
@@ -64,8 +65,8 @@ class LMModel(nn.Module):
         B, K, T = indices.shape
         input_ = sum([self.emb[k](indices[:, k]) for k in range(K)])
         out, states, offset = self.transformer(input_, states, offset)
-        logits = th.stack([self.linears[k](out) for k in range(K)], dim=1).permute(0, 3, 1, 2)
-        return th.softmax(logits, dim=1), states, offset
+        logits = torch.stack([self.linears[k](out) for k in range(K)], dim=1).permute(0, 3, 1, 2)
+        return torch.softmax(logits, dim=1), states, offset
 
 
 class BLSTM(nn.Module):
@@ -258,11 +259,11 @@ def fast_conv(conv, x):
     assert batch == 1
     if kernel == 1:
         x = x.view(chin, length)
-        out = th.addmm(conv.bias.view(-1, 1),
+        out = torch.addmm(conv.bias.view(-1, 1),
                        conv.weight.view(chout, chin), x)
     elif length == kernel:
         x = x.view(chin * kernel, 1)
-        out = th.addmm(conv.bias.view(-1, 1),
+        out = torch.addmm(conv.bias.view(-1, 1),
                        conv.weight.view(chout, chin * kernel), x)
     else:
         out = conv(x)
@@ -303,13 +304,13 @@ class DemucsStreamer:
         self.frame_length = demucs.valid_length(1) + demucs.total_stride * (num_frames - 1)
         self.total_length = self.frame_length + self.resample_lookahead
         self.stride = demucs.total_stride * num_frames
-        self.resample_in = th.zeros(demucs.chin, resample_buffer, device=device)
-        self.resample_out = th.zeros(demucs.chin, resample_buffer, device=device)
+        self.resample_in = torch.zeros(demucs.chin, resample_buffer, device=device)
+        self.resample_out = torch.zeros(demucs.chin, resample_buffer, device=device)
 
         self.frames = 0
         self.total_time = 0
         self.variance = 0
-        self.pending = th.zeros(demucs.chin, 0, device=device)
+        self.pending = torch.zeros(demucs.chin, 0, device=device)
 
         bias = demucs.decoder[0][2].bias
         weight = demucs.decoder[0][2].weight
@@ -334,7 +335,7 @@ class DemucsStreamer:
         self.lstm_state = None
         self.conv_state = None
         pending_length = self.pending.shape[1]
-        padding = th.zeros(self.demucs.chin, self.total_length, device=self.pending.device)
+        padding = torch.zeros(self.demucs.chin, self.total_length, device=self.pending.device)
         out = self.feed(padding)
         return out[:, :pending_length]
 
@@ -355,7 +356,7 @@ class DemucsStreamer:
         if chin != demucs.chin:
             raise ValueError(f"Expected {demucs.chin} channels, got {chin}")
 
-        self.pending = th.cat([self.pending, wav], dim=1)
+        self.pending = torch.cat([self.pending, wav], dim=1)
         outs = []
         while self.pending.shape[1] >= self.total_length:
             self.frames += 1
@@ -366,7 +367,7 @@ class DemucsStreamer:
                 variance = (mono ** 2).mean()
                 self.variance = variance / self.frames + (1 - 1 / self.frames) * self.variance
                 frame = frame / (demucs.floor + math.sqrt(self.variance))
-            padded_frame = th.cat([self.resample_in, frame], dim=-1)
+            padded_frame = torch.cat([self.resample_in, frame], dim=-1)
             self.resample_in[:] = frame[:, stride - resample_buffer:stride]
             frame = padded_frame
 
@@ -378,7 +379,7 @@ class DemucsStreamer:
             frame = frame[:, :resample * self.frame_length]  # remove extra samples after window
 
             out, extra = self._separate_frame(frame)
-            padded_out = th.cat([self.resample_out, out, extra], 1)
+            padded_out = torch.cat([self.resample_out, out, extra], 1)
             self.resample_out[:] = out[:, -resample_buffer:]
             if resample == 4:
                 out = downsample2(downsample2(padded_out))
@@ -398,9 +399,9 @@ class DemucsStreamer:
 
         self.total_time += time.time() - begin
         if outs:
-            out = th.cat(outs, 1)
+            out = torch.cat(outs, 1)
         else:
-            out = th.zeros(chin, 0, device=wav.device)
+            out = torch.zeros(chin, 0, device=wav.device)
         return out
 
     def _separate_frame(self, frame):
@@ -431,7 +432,7 @@ class DemucsStreamer:
                 x = fast_conv(encode[2], x)
                 x = encode[3](x)
                 if not first:
-                    x = th.cat([prev, x], -1)
+                    x = torch.cat([prev, x], -1)
                 next_state.append(x)
             skips.append(x)
 
@@ -527,7 +528,7 @@ class EncodecModel(nn.Module):
             return None
         return max(1, int((1 - self.overlap) * segment_length))
 
-    def encode(self, x: th.Tensor) -> tp.List[EncodedFrame]:
+    def encode(self, x: torch.Tensor) -> tp.List[EncodedFrame]:
         """Given a tensor `x`, returns a list of frames containing
         the discrete encoded codes for `x`, along with rescaling factors
         for each segment, when `self.normalize` is True.
@@ -552,7 +553,7 @@ class EncodecModel(nn.Module):
             encoded_frames.append(self._encode_frame(frame))
         return encoded_frames
 
-    def _encode_frame(self, x: th.Tensor) -> EncodedFrame:
+    def _encode_frame(self, x: torch.Tensor) -> EncodedFrame:
         length = x.shape[-1]
         duration = length / self.sample_rate
         assert self.segment is None or duration <= 1e-5 + self.segment
@@ -573,7 +574,7 @@ class EncodecModel(nn.Module):
         # return codes, scale
         return emb
 
-    def decode(self, encoded_frames: tp.List[EncodedFrame]) -> th.Tensor:
+    def decode(self, encoded_frames: tp.List[EncodedFrame]) -> torch.Tensor:
         """Decode the given frames into a waveform.
         Note that the output might be a bit bigger than the input. In that case,
         any extra steps at the end can be trimmed.
@@ -586,7 +587,7 @@ class EncodecModel(nn.Module):
         frames = [self._decode_frame(frame) for frame in encoded_frames]
         return _linear_overlap_add(frames, self.segment_stride or 1)
 
-    def _decode_frame(self, encoded_frame: EncodedFrame) -> th.Tensor:
+    def _decode_frame(self, encoded_frame: EncodedFrame) -> torch.Tensor:
         # codes, scale = encoded_frame
         # codes = codes.transpose(0, 1)
         # emb = self.quantizer.decode(codes)
@@ -595,7 +596,7 @@ class EncodecModel(nn.Module):
         #     out = out * scale.view(-1, 1, 1)
         return out
 
-    def forward(self, x: th.Tensor) -> th.Tensor:
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         frames = self.encode(x)
         return self.decode(frames)[:, :, :x.shape[-1]]
 
@@ -620,7 +621,7 @@ class EncodecModel(nn.Module):
         except KeyError:
             raise RuntimeError("No LM pre-trained for the current Encodec model.")
         url = _get_checkpoint_url(ROOT_URL, checkpoint_name)
-        state = th.hub.load_state_dict_from_url(
+        state = torch.hub.load_state_dict_from_url(
             url, map_location='cpu', check_hash=True)  # type: ignore
         lm.load_state_dict(state)
         lm.eval()
@@ -657,6 +658,87 @@ class EncodecModel(nn.Module):
         return model
 
 
+class DiscriminatorS(torch.nn.Module):
+    def __init__(self, use_spectral_norm=False, n_fft: int = 512):
+        super(DiscriminatorS, self).__init__()
+        self.norm_f = weight_norm if use_spectral_norm == False else spectral_norm
+        self.n_fft = n_fft
+        self.convs = nn.ModuleList([
+            nn.Conv2d(in_channels=2, out_channels=32, kernel_size=(3, 8)),
+            nn.Conv2d(in_channels=32, out_channels=32, kernel_size=(3, 8), stride=(2, 1), dilation=(1, 1)),
+            nn.Conv2d(in_channels=32, out_channels=32, kernel_size=(3, 8), stride=(2, 1), dilation=(2, 1)),
+            nn.Conv2d(in_channels=32, out_channels=32, kernel_size=(3, 8), stride=(2, 1), dilation=(4, 1)),
+            # nn.Conv2d(in_channels=32, out_channels=32, kernel_size=(3, 3)),
+            nn.Conv2d(in_channels=32, out_channels=1, kernel_size=(3, 3)),
+        ])
+        self.conv_post = self.norm_f(self.convs)
+
+    def forward(self, x):
+        x_stft = torch.stft(x, self.n_fft, return_complex=True)
+        x = torch.view_as_real(x_stft)
+        x = x.permute(0, 3, 1, 2)
+        fmap = []
+        for l in self.convs:
+            x = l(x)
+            x = F.leaky_relu(x, 0.1)
+            fmap.append(x)
+        x = self.conv_post(x)
+        fmap.append(x)
+        x = torch.flatten(x, 1, -1)
+        return x, fmap
+
+
+class MultiScaleDiscriminator(torch.nn.Module):
+    @capture_init
+    def __init__(self):
+        super(MultiScaleDiscriminator, self).__init__()
+        self.discriminators = nn.ModuleList([
+            DiscriminatorS(n_fft=2048),
+            DiscriminatorS(n_fft=1024),
+            DiscriminatorS(n_fft=512),
+            DiscriminatorS(n_fft=256),
+            DiscriminatorS(n_fft=128),
+        ])
+
+    def forward(self, y, y_hat):
+        y_d_rs = []
+        y_d_gs = []
+        fmap_rs = []
+        fmap_gs = []
+        for i, d in enumerate(self.discriminators):
+            y_d_r, fmap_r = d(y)
+            y_d_g, fmap_g = d(y_hat)
+            y_d_rs.append(y_d_r)
+            fmap_rs.append(fmap_r)
+            y_d_gs.append(y_d_g)
+            fmap_gs.append(fmap_g)
+
+        return y_d_rs, y_d_gs, fmap_rs, fmap_gs
+
+
+def feature_loss(fmap_r, fmap_g):
+    loss = 0
+    for dr, dg in zip(fmap_r, fmap_g):
+        for rl, gl in zip(dr, dg):
+            loss += torch.mean(torch.abs(rl - gl))
+
+    return loss*2
+
+
+def discriminator_loss(disc_real_outputs, disc_generated_outputs):
+    loss = 0
+    r_losses = []
+    g_losses = []
+    for dr, dg in zip(disc_real_outputs, disc_generated_outputs):
+        r_loss = torch.mean((1-dr)**2)
+        g_loss = torch.mean(dg**2)
+        loss += (r_loss + g_loss)
+        r_losses.append(r_loss.item())
+        g_losses.append(g_loss.item())
+
+    return loss, r_losses, g_losses
+
+
 def test():
     import argparse
     parser = argparse.ArgumentParser(
@@ -672,27 +754,27 @@ def test():
     parser.add_argument("-f", "--num_frames", type=int, default=1)
     args = parser.parse_args()
     if args.num_threads:
-        th.set_num_threads(args.num_threads)
+        torch.set_num_threads(args.num_threads)
     sr = args.sample_rate
     sr_ms = sr / 1000
     demucs = Demucs(depth=args.depth, hidden=args.hidden, resample=args.resample).to(args.device)
-    x = th.randn(1, int(sr * 4)).to(args.device)
+    x = torch.randn(1, int(sr * 4)).to(args.device)
     out = demucs(x[None])[0]
     streamer = DemucsStreamer(demucs, num_frames=args.num_frames)
     out_rt = []
     frame_size = streamer.total_length
-    with th.no_grad():
+    with torch.no_grad():
         while x.shape[1] > 0:
             out_rt.append(streamer.feed(x[:, :frame_size]))
             x = x[:, frame_size:]
             frame_size = streamer.demucs.total_stride
     out_rt.append(streamer.flush())
-    out_rt = th.cat(out_rt, 1)
+    out_rt = torch.cat(out_rt, 1)
     model_size = sum(p.numel() for p in demucs.parameters()) * 4 / 2 ** 20
     initial_lag = streamer.total_length / sr_ms
     tpf = 1000 * streamer.time_per_frame
     print(f"model size: {model_size:.1f}MB, ", end='')
-    print(f"delta batch/streaming: {th.norm(out - out_rt) / th.norm(out):.2%}")
+    print(f"delta batch/streaming: {torch.norm(out - out_rt) / torch.norm(out):.2%}")
     print(f"initial lag: {initial_lag:.1f}ms, ", end='')
     print(f"stride: {streamer.stride * args.num_frames / sr_ms:.1f}ms")
     print(f"time per frame: {tpf:.1f}ms, ", end='')

@@ -56,7 +56,7 @@ def run(args):
     # Demucs requires a specific number of samples to avoid 0 padding during training
     if hasattr(model, 'valid_length'):
         length = model.valid_length(length)
-    kwargs = {"matching": args.dset.matching, "sample_rate": args.sample_rate}
+    kwargs = {"matching": args.dset.matching, "sample_rate": args.sample_rate, "convert": args.convert}
     # Building datasets and loaders
     tr_dataset = CleanSet(
         args.dset.train, length=length, stride=stride, pad=args.pad, **kwargs)

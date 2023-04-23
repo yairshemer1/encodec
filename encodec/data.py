@@ -68,7 +68,7 @@ def match_files(noisy, clean, matching="sort"):
 
 class CleanSet:
     def __init__(self, json_dir, matching="sort", length=None, stride=None,
-                 pad=True, sample_rate=None):
+                 pad=True, sample_rate=None, convert=None):
         """__init__.
 
         :param json_dir: directory containing both clean.json and noisy.json
@@ -82,7 +82,7 @@ class CleanSet:
         with open(clean_json, 'r') as f:
             clean = json.load(f)
 
-        kw = {'length': length, 'stride': stride, 'pad': pad, 'sample_rate': sample_rate}
+        kw = {'length': length, 'stride': stride, 'pad': pad, 'sample_rate': sample_rate, 'convert': convert}
         self.clean_set = Audioset(clean, **kw)
 
     def __getitem__(self, index):

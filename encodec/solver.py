@@ -178,7 +178,7 @@ class Solver(object):
 
                 # enhance some samples
                 logger.info('Enhance and save samples...')
-                enhance(self.args, self.model, self.samples_dir)
+                # enhance(self.args, self.model, self.samples_dir)
             if self.args.wandb:
                 wandb.log(metrics, step=epoch, commit=False)
             self.history.append(metrics)

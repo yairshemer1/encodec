@@ -9,8 +9,9 @@ models/
 private/
 dist
 build
-conf/
-dataset/
+conf
+dataset
+.idea/*
 *.egg-info
 *.th
 launch_master.sh

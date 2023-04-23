@@ -11,11 +11,10 @@ import time
 import torch
 from torch import nn
 from torch.nn import functional as F
-from torch.nn.utils import spectral_norm, weight_norm
-from pathlib import Path
 import typing as tp
 import numpy as np
 
+from encodec.modules import NormConv2d
 from .resample import downsample2, upsample2
 from .utils import capture_init
 from . import quantization as qt
@@ -661,17 +660,14 @@ class EncodecModel(nn.Module):
 class DiscriminatorS(torch.nn.Module):
     def __init__(self, use_spectral_norm=False, n_fft: int = 512):
         super(DiscriminatorS, self).__init__()
-        self.norm_f = weight_norm if use_spectral_norm == False else spectral_norm
         self.n_fft = n_fft
         self.convs = nn.ModuleList([
-            nn.Conv2d(in_channels=2, out_channels=32, kernel_size=(3, 8)),
-            nn.Conv2d(in_channels=32, out_channels=32, kernel_size=(3, 8), stride=(2, 1), dilation=(1, 1)),
-            nn.Conv2d(in_channels=32, out_channels=32, kernel_size=(3, 8), stride=(2, 1), dilation=(2, 1)),
-            nn.Conv2d(in_channels=32, out_channels=32, kernel_size=(3, 8), stride=(2, 1), dilation=(4, 1)),
-            # nn.Conv2d(in_channels=32, out_channels=32, kernel_size=(3, 3)),
-            nn.Conv2d(in_channels=32, out_channels=1, kernel_size=(3, 3)),
+            NormConv2d(in_channels=2, out_channels=32, kernel_size=(3, 8)),
+            NormConv2d(in_channels=32, out_channels=32, kernel_size=(3, 8), stride=(2, 1), dilation=(1, 1)),
+            NormConv2d(in_channels=32, out_channels=32, kernel_size=(3, 8), stride=(2, 1), dilation=(2, 1)),
+            NormConv2d(in_channels=32, out_channels=32, kernel_size=(3, 8), stride=(2, 1), dilation=(4, 1)),
+            NormConv2d(in_channels=32, out_channels=1, kernel_size=(3, 3)),
         ])
-        self.conv_post = self.norm_f(self.convs)
 
     def forward(self, x):
         x_stft = torch.stft(x, self.n_fft, return_complex=True)
@@ -682,8 +678,6 @@ class DiscriminatorS(torch.nn.Module):
             x = l(x)
             x = F.leaky_relu(x, 0.1)
             fmap.append(x)
-        x = self.conv_post(x)
-        fmap.append(x)
         x = torch.flatten(x, 1, -1)
         return x, fmap
 

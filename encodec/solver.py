@@ -187,7 +187,7 @@ class Solver(object):
                 logger.info('Enhance and save samples...')
                 # enhance(self.args, self.model, self.samples_dir)
             if self.args.wandb:
-                wandb.log(metrics, step=epoch, commit=False)
+                wandb.log(metrics, step=epoch)
             self.history.append(metrics)
             info = " | ".join(f"{k.capitalize()} {v:.5f}" for k, v in metrics.items())
             logger.info('-' * 70)
@@ -242,6 +242,9 @@ class Solver(object):
                     loss.backward()
                     self.optimizer.step()
 
+            losses = {"reconstruction loss": loss.item(), "MSD loss": msd_loss.item()}
+            if self.args.wandb:
+                wandb.log(losses, step=epoch)
             total_loss += loss.item() + msd_loss.item()
             logprog.update(loss=format(total_loss / (i + 1), ".5f"))
             # Just in case, clear some memory

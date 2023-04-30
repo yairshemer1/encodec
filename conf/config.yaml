@@ -19,6 +19,7 @@ revecho: 0  # add reverb like augment
 
 # Logging and printing, and does not impact training
 wandb: false
+exp_name: no_name
 num_prints: 1
 device:
 num_workers: 5

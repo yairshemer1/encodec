@@ -38,8 +38,8 @@ def run(args):
             decoder,
             normalize=False,
             segment=None,
-        )
-    msd = MultiScaleDiscriminator()
+        ).to(args.device)
+    msd = MultiScaleDiscriminator().to(args.device)
 
     if args.show:
         logger.info(model)

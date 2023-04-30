@@ -17,7 +17,7 @@ import torch.nn.functional as F
 from . import augment, distrib, pretrained
 from .enhance import enhance
 from .evaluate import evaluate
-from .model import MultiScaleDiscriminator, discriminator_loss, feature_loss
+from .model import MultiScaleDiscriminator, discriminator_loss, feature_loss, generator_loss
 from .stft_loss import MultiResolutionSTFTLoss
 from .utils import bold, copy_state, pull_metric, serialize_model, swap_state, LogProgress
 
@@ -147,7 +147,7 @@ class Solver(object):
             train_loss = self._run_one_epoch(epoch)
             logger.info(
                 bold(f'Train Summary | End of Epoch {epoch + 1} | '
-                    f'Time {time.time() - start:.2f}s | Train Loss {train_loss:.5f}'))
+                     f'Time {time.time() - start:.2f}s | Train Loss {train_loss:.5f}'))
 
             if self.cv_loader:
                 # Cross validation
@@ -214,39 +214,42 @@ class Solver(object):
             estimate = self.dmodel(clean)
             # apply a loss function after each layer
             with torch.autograd.set_detect_anomaly(True):
-                if self.args.loss == 'l1':
-                    loss = F.l1_loss(clean, estimate)
-                elif self.args.loss == 'l2':
-                    loss = F.mse_loss(clean, estimate)
-                elif self.args.loss == 'huber':
-                    loss = F.smooth_l1_loss(clean, estimate)
-                else:
-                    raise ValueError(f"Invalid loss {self.args.loss}")
-                # MultiResolution STFT loss
-                if self.args.stft_loss:
-                    sc_loss, mag_loss = self.mrstftloss(estimate.squeeze(1), clean.squeeze(1))
-                    loss += sc_loss + mag_loss
+                gen_loss = self.generator_step(clean=clean, estimate=estimate, cross_valid=cross_valid)
+                disc_loss = self.disc_step(clean=clean, estimate=estimate, cross_valid=cross_valid)
+                total_loss = gen_loss + disc_loss
 
-                y_ds_hat_r, y_ds_hat_g, fmap_s_r, fmap_s_g = self.msd(clean.squeeze(1), estimate.squeeze(1).detach())
-                loss_disc_s, losses_disc_s_r, losses_disc_s_g = discriminator_loss(y_ds_hat_r, y_ds_hat_g)
-                loss_fm_f = feature_loss(fmap_s_r, fmap_s_g)
-                msd_loss = loss_fm_f + loss_disc_s
-                # optimize model in training mode
-                if not cross_valid:
-                    # msd loss
-                    self.optimizer_msd.zero_grad()
-                    msd_loss.backward()
-                    self.optimizer_msd.step()
-                    # reconstruction loss
-                    self.optimizer.zero_grad()
-                    loss.backward()
-                    self.optimizer.step()
-
-            losses = {"reconstruction loss": loss.item(), "MSD loss": msd_loss.item()}
+            losses = {"discriminator loss": disc_loss, "generator loss": gen_loss}
             if self.args.wandb:
                 wandb.log(losses, step=epoch)
-            total_loss += loss.item() + msd_loss.item()
             logprog.update(loss=format(total_loss / (i + 1), ".5f"))
-            # Just in case, clear some memory
-            del loss, estimate
+
         return distrib.average([total_loss / (i + 1)], i + 1)[0]
+
+    def generator_step(self, clean, estimate, cross_valid=False):
+        sc_loss, mag_loss = self.mrstftloss(estimate.squeeze(1), clean.squeeze(1))
+        mel_loss = sc_loss + mag_loss
+
+        y_ds_hat_r, y_ds_hat_g, fmap_s_r, fmap_s_g = self.msd(clean.squeeze(1), estimate.squeeze(1).detach())
+        loss_fm_f = feature_loss(fmap_s_r, fmap_s_g)
+        loss_gen_s, _ = generator_loss(y_ds_hat_g)
+        total_loss = mel_loss + loss_fm_f + loss_gen_s
+
+        if not cross_valid:
+            self.optimizer.zero_grad()
+            total_loss.backward()
+            self.optimizer.step()
+
+        return total_loss.item()
+
+    def disc_step(self, clean, estimate, cross_valid=False):
+        y_ds_hat_r, y_ds_hat_g, fmap_s_r, fmap_s_g = self.msd(clean.squeeze(1), estimate.squeeze(1).detach())
+        loss_disc_s, _, _ = discriminator_loss(y_ds_hat_r, y_ds_hat_g)
+        loss_fm_f = feature_loss(fmap_s_r, fmap_s_g)
+        msd_loss = loss_fm_f + loss_disc_s
+
+        if not cross_valid:
+            self.optimizer_msd.zero_grad()
+            msd_loss.backward()
+            self.optimizer_msd.step()
+
+        return msd_loss.item()

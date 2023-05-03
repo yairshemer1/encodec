@@ -244,12 +244,10 @@ class Solver(object):
     def disc_step(self, clean, estimate, cross_valid=False):
         y_ds_hat_r, y_ds_hat_g, fmap_s_r, fmap_s_g = self.msd(clean.squeeze(1), estimate.squeeze(1).detach())
         loss_disc_s, _, _ = discriminator_loss(y_ds_hat_r, y_ds_hat_g)
-        loss_fm_f = feature_loss(fmap_s_r, fmap_s_g)
-        msd_loss = loss_fm_f + loss_disc_s
 
         if not cross_valid:
             self.optimizer_msd.zero_grad()
-            msd_loss.backward()
+            loss_disc_s.backward()
             self.optimizer_msd.step()
 
-        return msd_loss.item()
+        return loss_disc_s.item()

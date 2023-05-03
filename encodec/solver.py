@@ -213,10 +213,12 @@ class Solver(object):
             clean = data.to(self.device)
             estimate = self.dmodel(clean)
             # apply a loss function after each layer
-            with torch.autograd.set_detect_anomaly(True):
-                disc_loss = self.disc_step(clean=clean, estimate=estimate, cross_valid=cross_valid)
-                gen_loss = self.generator_step(clean=clean, estimate=estimate, cross_valid=cross_valid)
-                total_loss = gen_loss + disc_loss
+            # with torch.autograd.set_detect_anomaly(True):
+            clean = torch.autograd.Variable(clean.to(self.device, non_blocking=True))
+            estimate = torch.autograd.Variable(estimate.to(self.device, non_blocking=True))
+            disc_loss = self.disc_step(clean=clean, estimate=estimate, cross_valid=cross_valid)
+            gen_loss = self.generator_step(clean=clean, estimate=estimate, cross_valid=cross_valid)
+            total_loss = gen_loss + disc_loss
 
             losses = {"discriminator loss": disc_loss, "generator loss": gen_loss}
             if self.args.wandb:

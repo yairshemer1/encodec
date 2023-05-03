@@ -666,6 +666,7 @@ class DiscriminatorS(torch.nn.Module):
             NormConv2d(in_channels=32, out_channels=32, kernel_size=(3, 8), stride=(2, 1), dilation=(1, 1)),
             NormConv2d(in_channels=32, out_channels=32, kernel_size=(3, 8), stride=(2, 1), dilation=(2, 1)),
             NormConv2d(in_channels=32, out_channels=32, kernel_size=(3, 8), stride=(2, 1), dilation=(4, 1)),
+            # NormConv2d(in_channels=32, out_channels=32, kernel_size=(3, 3)),
             NormConv2d(in_channels=32, out_channels=1, kernel_size=(3, 3)),
         ])
 
@@ -693,6 +694,10 @@ class MultiScaleDiscriminator(torch.nn.Module):
             DiscriminatorS(n_fft=256),
             DiscriminatorS(n_fft=128),
         ])
+        self.meanpools = nn.ModuleList([
+            nn.AvgPool2d(4, 2, padding=2),
+            nn.AvgPool2d(4, 2, padding=2)
+        ])
 
     def forward(self, y, y_hat):
         y_d_rs = []
@@ -716,7 +721,7 @@ def feature_loss(fmap_r, fmap_g):
         for rl, gl in zip(dr, dg):
             loss += torch.mean(torch.abs(rl - gl))
 
-    return loss
+    return loss*2
 
 
 def discriminator_loss(disc_real_outputs, disc_generated_outputs):

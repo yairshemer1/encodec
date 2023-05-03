@@ -242,7 +242,7 @@ class Solver(object):
         return total_loss.item()
 
     def disc_step(self, clean, estimate, cross_valid=False):
-        y_ds_hat_r, y_ds_hat_g, fmap_s_r, fmap_s_g = self.msd(clean.squeeze(1), estimate.squeeze(1).detach())
+        y_ds_hat_r, y_ds_hat_g, fmap_s_r, fmap_s_g = self.msd(clean.squeeze(1), estimate.squeeze(1))
         loss_disc_s, _, _ = discriminator_loss(y_ds_hat_r, y_ds_hat_g)
 
         if not cross_valid:

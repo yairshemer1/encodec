@@ -218,7 +218,7 @@ class Solver(object):
             # estimate = torch.autograd.Variable(estimate.to(self.device, non_blocking=True))
             # disc_loss = self.disc_step(clean=clean, estimate=estimate, cross_valid=cross_valid)
             with torch.autograd.set_detect_anomaly(True):
-                gen_loss = self.generator_step(clean=clean, estimate=estimate, cross_valid=cross_valid)
+                gen_loss = self.generator_step(clean=clean, estimate=estimate, cross_valid=cross_valid, epoch=epoch)
                 total_loss = gen_loss# + disc_loss
 
             losses = {"generator loss": gen_loss} #"discriminator loss": disc_loss
@@ -228,21 +228,23 @@ class Solver(object):
 
         return distrib.average([total_loss / (i + 1)], i + 1)[0]
 
-    def generator_step(self, clean, estimate, cross_valid=False):
+    def generator_step(self, clean, estimate, epoch, cross_valid=False):
         sc_loss, mag_loss = self.mrstftloss(estimate.squeeze(1), clean.squeeze(1))
+        wav_loss = F.l1_loss(estimate.squeeze(1), clean.squeeze(1))
         mel_loss = sc_loss + mag_loss
-
+        total_loss = wav_loss + mel_loss
         # y_ds_hat_r, y_ds_hat_g, fmap_s_r, fmap_s_g = self.msd(clean.squeeze(1), estimate.squeeze(1).detach())
         # loss_fm_f = feature_loss(fmap_s_r, fmap_s_g)
         # loss_gen_s, _ = generator_loss(y_ds_hat_g)
         # total_loss = mel_loss + loss_fm_f + loss_gen_s
-
+        if self.args.wandb:
+            wandb.log({"Spectral loss": sc_loss, "Magnitude loss": mag_loss, "Wave loss": wav_loss}, step=epoch)
         if not cross_valid:
             self.optimizer.zero_grad()
-            mel_loss.backward()
+            total_loss.backward()
             self.optimizer.step()
 
-        return mel_loss.item()
+        return total_loss.item()
 
     def disc_step(self, clean, estimate, cross_valid=False):
         y_ds_hat_r, y_ds_hat_g, fmap_s_r, fmap_s_g = self.msd(clean.squeeze(1), estimate.squeeze(1))

@@ -30,10 +30,10 @@ class Solver(object):
         self.cv_loader = data['cv_loader']
         self.tt_loader = data['tt_loader']
         self.model = model
-        self.msd = msd
+        # self.msd = msd
         self.dmodel = distrib.wrap(model)
         self.optimizer = optimizer
-        self.optimizer_msd = optimizer_msd
+        # self.optimizer_msd = optimizer_msd
 
         # data augment
         augments = []
@@ -75,7 +75,7 @@ class Solver(object):
     def _serialize(self):
         package = {}
         package['model'] = serialize_model(self.model)
-        package['msd'] = serialize_model(self.msd)
+        # package['msd'] = serialize_model(self.msd)
         package['optimizer'] = self.optimizer.state_dict()
         package['history'] = self.history
         package['best_state'] = self.best_state
@@ -110,10 +110,10 @@ class Solver(object):
             logger.info(f'Loading checkpoint model: {load_from}')
             package = torch.load(load_from, 'cpu')
             if load_best:
-                self.msd.load_state_dict(package['msd'])
+                # self.msd.load_state_dict(package['msd'])
                 self.model.load_state_dict(package['best_state'])
             else:
-                self.msd.load_state_dict(package['msd']['state'])
+                # self.msd.load_state_dict(package['msd']['state'])
                 self.model.load_state_dict(package['model']['state'])
             if 'optimizer' in package and not load_best:
                 self.optimizer.load_state_dict(package['optimizer'])
@@ -140,7 +140,7 @@ class Solver(object):
         for epoch in range(len(self.history), self.epochs):
             # Train one epoch
             self.model.train()
-            self.msd.train()
+            # self.msd.train()
             start = time.time()
             logger.info('-' * 70)
             logger.info("Training...")
@@ -216,11 +216,11 @@ class Solver(object):
             # with torch.autograd.set_detect_anomaly(True):
             clean = torch.autograd.Variable(clean.to(self.device, non_blocking=True))
             estimate = torch.autograd.Variable(estimate.to(self.device, non_blocking=True))
-            disc_loss = self.disc_step(clean=clean, estimate=estimate, cross_valid=cross_valid)
+            # disc_loss = self.disc_step(clean=clean, estimate=estimate, cross_valid=cross_valid)
             gen_loss = self.generator_step(clean=clean, estimate=estimate, cross_valid=cross_valid)
-            total_loss = gen_loss + disc_loss
+            total_loss = gen_loss# + disc_loss
 
-            losses = {"discriminator loss": disc_loss, "generator loss": gen_loss}
+            losses = {"generator loss": gen_loss} #"discriminator loss": disc_loss
             if self.args.wandb:
                 wandb.log(losses, step=epoch)
             logprog.update(loss=format(total_loss / (i + 1), ".5f"))
@@ -229,19 +229,19 @@ class Solver(object):
 
     def generator_step(self, clean, estimate, cross_valid=False):
         sc_loss, mag_loss = self.mrstftloss(estimate.squeeze(1), clean.squeeze(1))
-        mel_loss = (sc_loss + mag_loss)*45
+        mel_loss = sc_loss + mag_loss
 
-        y_ds_hat_r, y_ds_hat_g, fmap_s_r, fmap_s_g = self.msd(clean.squeeze(1), estimate.squeeze(1).detach())
-        loss_fm_f = feature_loss(fmap_s_r, fmap_s_g)
-        loss_gen_s, _ = generator_loss(y_ds_hat_g)
-        total_loss = mel_loss + loss_fm_f + loss_gen_s
+        # y_ds_hat_r, y_ds_hat_g, fmap_s_r, fmap_s_g = self.msd(clean.squeeze(1), estimate.squeeze(1).detach())
+        # loss_fm_f = feature_loss(fmap_s_r, fmap_s_g)
+        # loss_gen_s, _ = generator_loss(y_ds_hat_g)
+        # total_loss = mel_loss + loss_fm_f + loss_gen_s
 
         if not cross_valid:
             self.optimizer.zero_grad()
-            total_loss.backward()
+            mel_loss.backward()
             self.optimizer.step()
 
-        return total_loss.item()
+        return mel_loss.item()
 
     def disc_step(self, clean, estimate, cross_valid=False):
         y_ds_hat_r, y_ds_hat_g, fmap_s_r, fmap_s_g = self.msd(clean.squeeze(1), estimate.squeeze(1))

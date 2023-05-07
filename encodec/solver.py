@@ -228,7 +228,7 @@ class Solver(object):
         sc_loss, mag_loss = self.mrstftloss(estimate.squeeze(1), clean.squeeze(1))
         wav_loss = F.l1_loss(estimate.squeeze(1), clean.squeeze(1))
         mel_loss = sc_loss + mag_loss
-        signal_loss = wav_loss + mel_loss
+        signal_loss = wav_loss + 45*mel_loss
         y_ds_hat_r, y_ds_hat_g, fmap_s_r, fmap_s_g = self.msd(clean.squeeze(1), estimate.squeeze(1).detach())
         loss_fm_f = feature_loss(fmap_s_r, fmap_s_g)
         loss_gen_s, _ = generator_loss(y_ds_hat_g)

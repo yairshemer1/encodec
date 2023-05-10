@@ -214,7 +214,8 @@ class Solver(object):
             estimate = self.dmodel(clean)
             # apply a loss function after each layer
             with torch.autograd.set_detect_anomaly(True):
-                disc_loss = self.disc_step(clean=clean, estimate=estimate, cross_valid=cross_valid, epoch=epoch)
+                estimate_detach = torch.clone(estimate).detach()
+                disc_loss = self.disc_step(clean=clean, estimate=estimate_detach, cross_valid=cross_valid, epoch=epoch)
                 gen_loss = self.generator_step(clean=clean, estimate=estimate, cross_valid=cross_valid, epoch=epoch)
                 total_loss = gen_loss + disc_loss
 
@@ -227,7 +228,7 @@ class Solver(object):
         wav_loss = F.l1_loss(estimate.squeeze(1), clean.squeeze(1)) * self.args.wave_factor
         mel_loss = (sc_loss + mag_loss) * self.args.mel_factor
         signal_loss = wav_loss + mel_loss
-        y_ds_hat_r, y_ds_hat_g, fmap_s_r, fmap_s_g = self.msd(clean.squeeze(1), estimate.squeeze(1).detach())
+        y_ds_hat_r, y_ds_hat_g, fmap_s_r, fmap_s_g = self.msd(clean.squeeze(1), estimate.squeeze(1))
         loss_fm_f = feature_loss(fmap_s_r, fmap_s_g) * self.args.feature_factor
         loss_gen_s, _ = generator_loss(y_ds_hat_g) * self.args.gen_factor
         total_loss = signal_loss + loss_fm_f + loss_gen_s

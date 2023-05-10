@@ -226,16 +226,15 @@ class Solver(object):
 
     def generator_step(self, clean, estimate, epoch, cross_valid=False):
         sc_loss, mag_loss = self.mrstftloss(estimate.squeeze(1), clean.squeeze(1))
-        wav_loss = F.l1_loss(estimate.squeeze(1), clean.squeeze(1))
-        mel_loss = sc_loss + mag_loss
-        signal_loss = wav_loss + 45*mel_loss
+        wav_loss = F.l1_loss(estimate.squeeze(1), clean.squeeze(1)) * self.args.wave_factor
+        mel_loss = (sc_loss + mag_loss) * self.args.mel_factor
+        signal_loss = wav_loss + mel_loss
         y_ds_hat_r, y_ds_hat_g, fmap_s_r, fmap_s_g = self.msd(clean.squeeze(1), estimate.squeeze(1).detach())
-        loss_fm_f = feature_loss(fmap_s_r, fmap_s_g)
-        loss_gen_s, _ = generator_loss(y_ds_hat_g)
+        loss_fm_f = feature_loss(fmap_s_r, fmap_s_g) * self.args.feature_factor
+        loss_gen_s, _ = generator_loss(y_ds_hat_g) * self.args.gen_factor
         total_loss = signal_loss + loss_fm_f + loss_gen_s
         if self.args.wandb:
-            wandb.log({"Spectral loss": sc_loss,
-                       "Magnitude loss": mag_loss,
+            wandb.log({"Mel loss": mel_loss,
                        "Wave loss": wav_loss,
                        "Feature loss": loss_fm_f,
                        "Generator loss": loss_gen_s}, step=epoch)
@@ -248,7 +247,7 @@ class Solver(object):
 
     def disc_step(self, clean, estimate, epoch, cross_valid=False):
         y_ds_hat_r, y_ds_hat_g, fmap_s_r, fmap_s_g = self.msd(clean.squeeze(1), estimate.squeeze(1))
-        loss_disc_s, _, _ = discriminator_loss(y_ds_hat_r, y_ds_hat_g)
+        loss_disc_s, _, _ = discriminator_loss(y_ds_hat_r, y_ds_hat_g) * self.args.disc_factor
 
         if not cross_valid:
             self.optimizer_msd.zero_grad()

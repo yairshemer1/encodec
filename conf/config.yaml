@@ -58,6 +58,11 @@ loss: l1
 stft_loss: True
 stft_sc_factor: .5
 stft_mag_factor: .5
+wave_factor: 10
+mel_factor: 45
+gen_factor: 1
+disc_factor: 1
+feature_factor: 1
 epochs: 500
 batch_size: 64
 

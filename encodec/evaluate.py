@@ -70,14 +70,7 @@ def evaluate(args, model=None, data_loader=None):
                 total_cnt += clean.shape[0]
 
         for pending in LogProgress(logger, pendings, updates, name="Eval metrics"):
-            pesq_i, stoi_i = pending.result()
-            total_pesq += pesq_i
-            total_stoi += stoi_i
-
-    metrics = [total_pesq, total_stoi]
-    pesq, stoi = distrib.average([m/total_cnt for m in metrics], total_cnt)
-    logger.info(bold(f'Test set performance:PESQ={pesq}, STOI={stoi}.'))
-    return pesq, stoi
+            pending.result()
 
 
 def _estimate_and_run_metrics(clean, model, args, epoch):
@@ -92,12 +85,6 @@ def _run_metrics(clean, estimate, args, sr, epoch):
         assert epoch, "epoch must not be None"
         wandb.log({"estimated": wandb.Audio(estimate.flatten(), caption="estimated", sample_rate=sr)}, step=epoch)
         wandb.log({"target": wandb.Audio(clean.flatten(), caption="target", sample_rate=sr)}, step=epoch)
-    if args.pesq:
-        pesq_i = get_pesq(clean, estimate, sr=sr)
-    else:
-        pesq_i = 0
-    stoi_i = get_stoi(clean, estimate, sr=sr)
-    return pesq_i, stoi_i
 
 
 def get_pesq(ref_sig, out_sig, sr):

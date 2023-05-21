@@ -9,6 +9,8 @@ import math
 import time
 
 import torch
+import torchaudio
+from einops import rearrange
 from torch import nn
 from torch.nn import functional as F
 import typing as tp
@@ -24,6 +26,10 @@ from .utils import _check_checksum, _linear_overlap_add, _get_checkpoint_url
 EncodedFrame = tp.Tuple[torch.Tensor, tp.Optional[torch.Tensor]]
 
 ROOT_URL = 'https://dl.fbaipublicfiles.com/encodec/v0/'
+
+
+def get_2d_padding(kernel_size: tp.Tuple[int, int], dilation: tp.Tuple[int, int] = (1, 1)):
+    return (((kernel_size[0] - 1) * dilation[0]) // 2, ((kernel_size[1] - 1) * dilation[1]) // 2)
 
 
 class LMModel(nn.Module):
@@ -658,22 +664,51 @@ class EncodecModel(nn.Module):
 
 
 class DiscriminatorS(torch.nn.Module):
-    def __init__(self, use_spectral_norm=False, n_fft: int = 512):
+    def __init__(self, filters: int, in_channels: int = 1, out_channels: int = 1,
+                 n_fft: int = 1024, hop_length: int = 256, win_length: int = 1024, max_filters: int = 1024,
+                 filters_scale: int = 1, kernel_size: tp.Tuple[int, int] = (3, 9), dilations: tp.List = [1, 2, 4],
+                 stride: tp.Tuple[int, int] = (1, 2), normalized: bool = True, norm: str = 'weight_norm',
+                 activation: str = 'LeakyReLU', activation_params: dict = {'negative_slope': 0.2}):
         super(DiscriminatorS, self).__init__()
+        assert len(kernel_size) == 2
+        assert len(stride) == 2
+        self.filters = filters
+        self.in_channels = in_channels
+        self.out_channels = out_channels
         self.n_fft = n_fft
-        self.convs = nn.ModuleList([
-            NormConv2d(in_channels=2, out_channels=32, kernel_size=(3, 8)),
-            NormConv2d(in_channels=32, out_channels=32, kernel_size=(3, 8), stride=(2, 1), dilation=(1, 1)),
-            NormConv2d(in_channels=32, out_channels=32, kernel_size=(3, 8), stride=(2, 1), dilation=(2, 1)),
-            NormConv2d(in_channels=32, out_channels=32, kernel_size=(3, 8), stride=(2, 1), dilation=(4, 1)),
-            NormConv2d(in_channels=32, out_channels=32, kernel_size=(3, 3), padding=1),
-            NormConv2d(in_channels=32, out_channels=1, kernel_size=(3, 3)),
-        ])
+        self.hop_length = hop_length
+        self.win_length = win_length
+        self.normalized = normalized
+        self.activation = getattr(torch.nn, activation)(**activation_params)
+        self.spec_transform = torchaudio.transforms.Spectrogram(
+            n_fft=self.n_fft, hop_length=self.hop_length, win_length=self.win_length, window_fn=torch.hann_window,
+            normalized=self.normalized, center=False, pad_mode=None, power=None)
+        spec_channels = 2 * self.in_channels
+        self.convs = nn.ModuleList()
+        self.convs.append(
+            NormConv2d(spec_channels, self.filters, kernel_size=kernel_size, padding=get_2d_padding(kernel_size))
+        )
+        in_chs = min(filters_scale * self.filters, max_filters)
+        for i, dilation in enumerate(dilations):
+            out_chs = min((filters_scale ** (i + 1)) * self.filters, max_filters)
+            self.convs.append(NormConv2d(in_chs, out_chs, kernel_size=kernel_size, stride=stride,
+                                         dilation=(dilation, 1), padding=get_2d_padding(kernel_size, (dilation, 1)),
+                                         norm=norm))
+            in_chs = out_chs
+        out_chs = min((filters_scale ** (len(dilations) + 1)) * self.filters, max_filters)
+        self.convs.append(NormConv2d(in_chs, out_chs, kernel_size=(kernel_size[0], kernel_size[0]),
+                                     padding=get_2d_padding((kernel_size[0], kernel_size[0])),
+                                     norm=norm))
+        self.conv_post = NormConv2d(out_chs, self.out_channels,
+                                    kernel_size=(kernel_size[0], kernel_size[0]),
+                                    padding=get_2d_padding((kernel_size[0], kernel_size[0])),
+                                    norm=norm)
 
     def forward(self, x):
-        x_stft = torch.stft(x, self.n_fft, return_complex=True)
-        x = torch.view_as_real(x_stft)
-        x = x.permute(0, 3, 1, 2)
+        x_spec = self.spec_transform(x)
+        x = torch.cat([x_spec.real, x_spec.imag], dim=1)
+        x = rearrange(x, 'b c w t -> b c t w')
+
         fmap = []
         for l in self.convs:
             x = l(x)
@@ -685,14 +720,15 @@ class DiscriminatorS(torch.nn.Module):
 
 class MultiScaleDiscriminator(torch.nn.Module):
     @capture_init
-    def __init__(self):
+    def __init__(self, filters: int, in_channels: int = 1, out_channels: int = 1,
+                 n_ffts: tp.List[int] = [1024, 2048, 512], hop_lengths: tp.List[int] = [256, 512, 128],
+                 win_lengths: tp.List[int] = [1024, 2048, 512]):
         super(MultiScaleDiscriminator, self).__init__()
+        assert len(n_ffts) == len(hop_lengths) == len(win_lengths)
         self.discriminators = nn.ModuleList([
-            DiscriminatorS(n_fft=2048),
-            DiscriminatorS(n_fft=1024),
-            DiscriminatorS(n_fft=512),
-            DiscriminatorS(n_fft=256),
-            DiscriminatorS(n_fft=128),
+            DiscriminatorS(filters, in_channels=in_channels, out_channels=out_channels,
+                              n_fft=n_ffts[i], win_length=win_lengths[i], hop_length=hop_lengths[i])
+            for i in range(len(n_ffts))
         ])
 
     def forward(self, y, y_hat):

@@ -1,5 +1,5 @@
 defaults:
-  - dset: debug
+  - dset: medium
   - hydra/job_logging: colorlog
   - hydra/hydra_logging: colorlog
 
@@ -21,7 +21,7 @@ revecho: 0  # add reverb like augment
 wandb: false
 exp_name: no_name
 num_prints: 1
-device:
+device: cuda
 num_workers: 5
 verbose: 0
 show: 0   # just show the model and its size and exit
@@ -46,7 +46,7 @@ dummy:  # use this if you want twice the same exp, with a different name
 
 # Evaluation stuff
 pesq: True # compute pesq?
-eval_every: 10  # compute test metrics every so epochs
+eval_every: 5  # compute test metrics every so epochs
 dry: 0.  # dry/wet knob value at eval
 streaming: False  # use streaming evaluation for Demucs
 
@@ -58,7 +58,7 @@ loss: l1
 stft_loss: True
 stft_sc_factor: .5
 stft_mag_factor: .5
-wave_factor: 10
+wave_factor: 1
 mel_factor: 45
 gen_factor: 1
 disc_factor: 1

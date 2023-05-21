@@ -5,7 +5,7 @@
 # This source code is licensed under the license found in the
 # LICENSE file in the root directory of this source tree.
 # authors: adiyoss and adefossez
-
+import itertools
 import logging
 import os
 import wandb
@@ -13,7 +13,7 @@ import hydra
 
 from encodec.executor import start_ddp_workers
 from encodec.model import MultiScaleDiscriminator
-
+# from encodec.hifi_gan_model import MultiScaleDiscriminator, MultiPeriodDiscriminator
 logger = logging.getLogger(__name__)
 
 
@@ -39,8 +39,7 @@ def run(args):
             normalize=False,
             segment=None,
         ).to(args.device)
-    msd = MultiScaleDiscriminator().to(args.device)
-
+    msd = MultiScaleDiscriminator(filters=32).to(args.device)
     if args.show:
         logger.info(model)
         mb = sum(p.numel() for p in model.parameters()) * 4 / 2**20
@@ -80,12 +79,8 @@ def run(args):
         model.cuda()
 
     # optimizer
-    if args.optim == "adam":
-        optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, betas=(0.9, args.beta2))
-        optimizer_msd = torch.optim.Adam(msd.parameters(), lr=args.lr, betas=(0.9, args.beta2))
-    else:
-        logger.fatal('Invalid optimizer %s', args.optim)
-        os._exit(1)
+    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, betas=(0.9, args.beta2))
+    optimizer_disc = torch.optim.Adam(msd.parameters(), lr=args.lr, betas=(0.9, args.beta2))
 
     # init WandB
     if args.wandb:
@@ -93,7 +88,7 @@ def run(args):
         wandb.init(project="encodec-reconstruct", name=args.exp_name)
 
     # Construct Solver
-    solver = Solver(data=data, model=model, msd=msd, optimizer=optimizer, optimizer_msd=optimizer_msd, args=args)
+    solver = Solver(data=data, model=model, msd=msd, optimizer=optimizer, optimizer_disc=optimizer_disc, args=args)
     solver.train()
     if args.wandb:
         wandb.finish()

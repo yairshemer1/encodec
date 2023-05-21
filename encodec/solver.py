@@ -15,25 +15,25 @@ import torch
 import torch.nn.functional as F
 
 from . import augment, distrib, pretrained
-from .enhance import enhance
 from .evaluate import evaluate
-from .model import MultiScaleDiscriminator, discriminator_loss, feature_loss, generator_loss
+from .model import discriminator_loss, feature_loss, generator_loss
 from .stft_loss import MultiResolutionSTFTLoss
 from .utils import bold, copy_state, pull_metric, serialize_model, swap_state, LogProgress
-
+# from .hifi_gan_model import discriminator_loss, generator_loss, feature_loss
 logger = logging.getLogger(__name__)
 
 
 class Solver(object):
-    def __init__(self, data, model, msd, optimizer, optimizer_msd, args):
+    def __init__(self, data, model, msd, optimizer, optimizer_disc, args):
         self.tr_loader = data['tr_loader']
         self.cv_loader = data['cv_loader']
         self.tt_loader = data['tt_loader']
         self.model = model
         self.msd = msd
+        # self.mpd = mpd
         self.dmodel = distrib.wrap(model)
         self.optimizer = optimizer
-        self.optimizer_msd = optimizer_msd
+        self.optimizer_disc = optimizer_disc
 
         # data augment
         augments = []
@@ -76,6 +76,7 @@ class Solver(object):
         package = {}
         package['model'] = serialize_model(self.model)
         package['msd'] = serialize_model(self.msd)
+        # package['mpd'] = serialize_model(self.mpd)
         package['optimizer'] = self.optimizer.state_dict()
         package['history'] = self.history
         package['best_state'] = self.best_state
@@ -110,9 +111,11 @@ class Solver(object):
             logger.info(f'Loading checkpoint model: {load_from}')
             package = torch.load(load_from, 'cpu')
             if load_best:
+                # self.mpd.load_state_dict(package['mpd'])
                 self.msd.load_state_dict(package['msd'])
                 self.model.load_state_dict(package['best_state'])
             else:
+                # self.mpd.load_state_dict(package['mpd']['state'])
                 self.msd.load_state_dict(package['msd']['state'])
                 self.model.load_state_dict(package['model']['state'])
             if 'optimizer' in package and not load_best:
@@ -141,6 +144,7 @@ class Solver(object):
             # Train one epoch
             self.model.train()
             self.msd.train()
+            # self.mpd.train()
             start = time.time()
             logger.info('-' * 70)
             logger.info("Training...")
@@ -179,13 +183,8 @@ class Solver(object):
                 logger.info('Evaluating on the test set...')
                 # We switch to the best known model for testing
                 with swap_state(self.model, self.best_state):
-                    pesq, stoi = evaluate(args=self.args, model=self.model, data_loader=self.tt_loader)
+                    evaluate(args=self.args, model=self.model, data_loader=self.tt_loader)
 
-                metrics.update({'pesq': pesq, 'stoi': stoi})
-
-                # enhance some samples
-                logger.info('Enhance and save samples...')
-                # enhance(self.args, self.model, self.samples_dir)
             if self.args.wandb:
                 wandb.log(metrics, step=epoch)
             self.history.append(metrics)
@@ -210,49 +209,64 @@ class Solver(object):
         name = label + f" | Epoch {epoch + 1}"
         logprog = LogProgress(logger, data_loader, updates=self.num_prints, name=name)
         for i, data in enumerate(logprog):
-            clean = data.to(self.device)
-            estimate = self.dmodel(clean)
+            y = data.to(self.device)
+            y_pred = self.dmodel(y)
+            # y = y.squeeze(1)
+            # y_pred = y_pred.squeeze(1)
             # apply a loss function after each layer
             with torch.autograd.set_detect_anomaly(True):
-                estimate_detach = torch.clone(estimate).detach()
-                disc_loss = self.disc_step(clean=clean, estimate=estimate_detach, cross_valid=cross_valid, epoch=epoch)
-                gen_loss = self.generator_step(clean=clean, estimate=estimate, cross_valid=cross_valid, epoch=epoch)
+                y_pred_detach = torch.clone(y_pred).detach()
+                disc_loss = self.disc_step(y=y, y_pred=y_pred_detach, cross_valid=cross_valid, epoch=epoch)
+                gen_loss = self.generator_step(y=y, y_pred=y_pred, cross_valid=cross_valid, epoch=epoch)
                 total_loss = gen_loss + disc_loss
 
             logprog.update(loss=format(total_loss / (i + 1), ".5f"))
 
         return distrib.average([total_loss / (i + 1)], i + 1)[0]
 
-    def generator_step(self, clean, estimate, epoch, cross_valid=False):
-        sc_loss, mag_loss = self.mrstftloss(estimate.squeeze(1), clean.squeeze(1))
-        wav_loss = F.l1_loss(estimate.squeeze(1), clean.squeeze(1)) * self.args.wave_factor
+    def generator_step(self, y, y_pred, epoch, cross_valid=False):
+        sc_loss, mag_loss = self.mrstftloss(y_pred.squeeze(1), y.squeeze(1))
+        wav_loss = F.l1_loss(y_pred, y) * self.args.wave_factor
         mel_loss = (sc_loss + mag_loss) * self.args.mel_factor
         signal_loss = wav_loss + mel_loss
-        y_ds_hat_r, y_ds_hat_g, fmap_s_r, fmap_s_g = self.msd(clean.squeeze(1), estimate.squeeze(1))
-        loss_fm_f = feature_loss(fmap_s_r, fmap_s_g) * self.args.feature_factor
-        loss_gen_s, _ = generator_loss(y_ds_hat_g) * self.args.gen_factor
-        total_loss = signal_loss + loss_fm_f + loss_gen_s
+        # y_df_hat_r, y_df_hat_g, fmap_f_r, fmap_f_g = self.mpd(y, y_pred)
+        y_ds_hat_r, y_ds_hat_g, fmap_s_r, fmap_s_g = self.msd(y, y_pred)
+        # loss_fm_f = feature_loss(fmap_f_r, fmap_f_g)
+        loss_fm_s = feature_loss(fmap_s_r, fmap_s_g)
+        # loss_gen_f, _ = generator_loss(y_df_hat_g)
+        loss_gen_s, _ = generator_loss(y_ds_hat_g)
+        loss_gen = loss_gen_s  # + loss_gen_f
+        loss_feature = loss_fm_s  # + loss_fm_f
+        loss_gen_all = loss_gen + loss_feature + signal_loss
         if self.args.wandb:
             wandb.log({"Mel loss": mel_loss,
                        "Wave loss": wav_loss,
-                       "Feature loss": loss_fm_f,
-                       "Generator loss": loss_gen_s}, step=epoch)
+                       "Feature loss": loss_feature,
+                       "Generator loss": loss_gen}, step=epoch)
         if not cross_valid:
             self.optimizer.zero_grad()
-            total_loss.backward()
+            loss_gen_all.backward()
             self.optimizer.step()
 
-        return total_loss.item()
+        return loss_gen_all.item()
 
-    def disc_step(self, clean, estimate, epoch, cross_valid=False):
-        y_ds_hat_r, y_ds_hat_g, fmap_s_r, fmap_s_g = self.msd(clean.squeeze(1), estimate.squeeze(1))
-        loss_disc_s, _, _ = discriminator_loss(y_ds_hat_r, y_ds_hat_g) * self.args.disc_factor
+    def disc_step(self, y, y_pred, epoch, cross_valid=False):
+        # MSD
+        y_ds_hat_r, y_ds_hat_g, _, _ = self.msd(y, y_pred)
+        loss_disc_s, losses_disc_s_r, losses_disc_s_g = discriminator_loss(y_ds_hat_r, y_ds_hat_g)
 
+        # MPD
+        # y_df_hat_r, y_df_hat_g, _, _ = self.mpd(y, y_pred)
+        # loss_disc_f, losses_disc_f_r, losses_disc_f_g = discriminator_loss(y_df_hat_r, y_df_hat_g)
+
+        # y_ds_hat_r, y_ds_hat_g, fmap_s_r, fmap_s_g = self.msd(y.squeeze(1), y_pred.squeeze(1))
+        # loss_disc_s, _, _ = discriminator_loss(y_ds_hat_r, y_ds_hat_g) * self.args.disc_factor
+        loss_disc_all = loss_disc_s  # + loss_disc_f
         if not cross_valid:
-            self.optimizer_msd.zero_grad()
-            loss_disc_s.backward()
-            self.optimizer_msd.step()
+            self.optimizer_disc.zero_grad()
+            loss_disc_all.backward()
+            self.optimizer_disc.step()
 
         if self.args.wandb:
-            wandb.log({"Discriminator loss": loss_disc_s}, step=epoch)
-        return loss_disc_s.item()
+            wandb.log({"Discriminator loss": loss_disc_all}, step=epoch)
+        return loss_disc_all.item()

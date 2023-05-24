@@ -153,9 +153,7 @@ class Solver(object):
             train_loss = self._run_one_epoch(epoch)
             logger.info(
                 bold(f'Train Summary | End of Epoch {epoch + 1} | '
-                     f'Time {time.time() - start:.2f}s | Train Loss {train_loss:.5f} |'
-                     f'lr_gen: {self.scheduler_gen.get_lr()} | '
-                     f'lr_disc: {self.scheduler_disc.get_lr()}'))
+                     f'Time {time.time() - start:.2f}s | Train Loss {train_loss:.5f}'))
 
             if self.cv_loader:
                 # Cross validation
@@ -166,12 +164,13 @@ class Solver(object):
                     valid_loss = self._run_one_epoch(epoch, cross_valid=True)
                 logger.info(
                     bold(f'Valid Summary | End of Epoch {epoch + 1} | '
-                        f'Time {time.time() - start:.2f}s | Valid Loss {valid_loss:.5f}'))
+                         f'Time {time.time() - start:.2f}s | Valid Loss {valid_loss:.5f}'))
             else:
                 valid_loss = 0
 
             best_loss = min(pull_metric(self.history, 'valid') + [valid_loss])
-            metrics = {'train': train_loss, 'valid': valid_loss, 'best': best_loss}
+            metrics = {'train': train_loss, 'valid': valid_loss, 'best': best_loss,
+                       'lr_gen': self.scheduler_gen.get_last_lr(), 'lr_disc': self.scheduler_disc.get_last_lr()}
 
             # Save the best model
             if valid_loss == best_loss:

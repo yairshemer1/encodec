@@ -54,7 +54,7 @@ streaming: False  # use streaming evaluation for Demucs
 optim: adam
 lr_gen: 3e-4
 lr_disc: 3e-5
-lr_decay: 0.9
+lr_decay: 0.95
 beta2: 0.999
 loss: l1
 stft_loss: True

@@ -17,7 +17,7 @@ import torch.nn.functional as F
 from . import augment, distrib, pretrained
 from .evaluate import evaluate
 from .model import discriminator_loss, feature_loss, generator_loss
-from .stft_loss import MultiResolutionSTFTLoss
+from .stft_loss import MultiResolutionMelLoss
 from .utils import bold, copy_state, pull_metric, serialize_model, swap_state, LogProgress
 
 logger = logging.getLogger(__name__)
@@ -68,8 +68,7 @@ class Solver(object):
         self.samples_dir = args.samples_dir  # Where to save samples
         self.num_prints = args.num_prints  # Number of times to log per epoch
         self.args = args
-        self.mrstftloss = MultiResolutionSTFTLoss(factor_sc=args.stft_sc_factor,
-                                                  factor_mag=args.stft_mag_factor).to(self.device)
+        self.multi_res_mel_loss = MultiResolutionMelLoss().to(self.device)
         self._reset()
 
     def _serialize(self):
@@ -190,7 +189,7 @@ class Solver(object):
             if self.args.wandb:
                 wandb.log(metrics, step=epoch)
             self.history.append(metrics)
-            info = " | ".join(f"{k.capitalize()} {v:.5f}" for k, v in metrics.items())
+            info = " | ".join(f"{k.capitalize()} {v:.05g}" for k, v in metrics.items())
             logger.info('-' * 70)
             logger.info(bold(f"Overall Summary | Epoch {epoch + 1} | {info}"))
 
@@ -228,9 +227,9 @@ class Solver(object):
         return distrib.average([total_loss / (i + 1)], i + 1)[0]
 
     def generator_step(self, y, y_pred, epoch, cross_valid=False):
-        sc_loss, mag_loss = self.mrstftloss(y_pred.squeeze(1), y.squeeze(1))
+        total_mel_loss, l1_mel_loss, l2_mel_loss = self.multi_res_mel_loss(y_pred.squeeze(1), y.squeeze(1))
         wav_loss = F.l1_loss(y_pred, y) * self.args.wave_factor
-        mel_loss = (sc_loss + mag_loss) * self.args.mel_factor
+        mel_loss = total_mel_loss * self.args.mel_factor
         signal_loss = wav_loss + mel_loss
         y_ds_hat_r, y_ds_hat_g, fmap_s_r, fmap_s_g = self.msd(y, y_pred)
         loss_fm_s = feature_loss(fmap_s_r, fmap_s_g)

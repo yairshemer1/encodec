@@ -10,9 +10,6 @@ from concurrent.futures import ProcessPoolExecutor
 import json
 import logging
 import sys
-import numpy as np
-from pesq import pesq
-from pystoi import stoi
 import torch
 
 from .data import CleanSet
@@ -28,15 +25,11 @@ parser = argparse.ArgumentParser(
 add_flags(parser)
 parser.add_argument('--data_dir', help='directory including noisy.json and clean.json files')
 parser.add_argument('--matching', default="sort", help='set this to dns for the dns dataset.')
-parser.add_argument('--no_pesq', action="store_false", dest="pesq", default=True,
-                    help="Don't compute PESQ.")
 parser.add_argument('-v', '--verbose', action='store_const', const=logging.DEBUG,
                     default=logging.INFO, help="More loggging")
 
 
 def evaluate(args, model=None, data_loader=None):
-    total_pesq = 0
-    total_stoi = 0
     total_cnt = 0
     updates = 5
 
@@ -87,40 +80,11 @@ def _run_metrics(clean, estimate, args, sr, epoch):
         wandb.log({"target": wandb.Audio(clean.flatten(), caption="target", sample_rate=sr)}, step=epoch)
 
 
-def get_pesq(ref_sig, out_sig, sr):
-    """Calculate PESQ.
-    Args:
-        ref_sig: numpy.ndarray, [B, T]
-        out_sig: numpy.ndarray, [B, T]
-    Returns:
-        PESQ
-    """
-    pesq_val = 0
-    for i in range(len(ref_sig)):
-        pesq_val += pesq(sr, ref_sig[i], out_sig[i], 'wb')
-    return pesq_val
-
-
-def get_stoi(ref_sig, out_sig, sr):
-    """Calculate STOI.
-    Args:
-        ref_sig: numpy.ndarray, [B, T]
-        out_sig: numpy.ndarray, [B, T]
-    Returns:
-        STOI
-    """
-    stoi_val = 0
-    for i in range(len(ref_sig)):
-        stoi_val += stoi(ref_sig[i], out_sig[i], sr, extended=False)
-    return stoi_val
-
-
 def main():
     args = parser.parse_args()
     logging.basicConfig(stream=sys.stderr, level=args.verbose)
     logger.debug(args)
-    pesq, stoi = evaluate(args)
-    json.dump({'pesq': pesq, 'stoi': stoi}, sys.stdout)
+    evaluate(args)
     sys.stdout.write('\n')
 
 

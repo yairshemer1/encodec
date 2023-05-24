@@ -1,6 +1,6 @@
 dset:
-  train: egs/valentini/tr
-  valid: egs/valentini/cv
-  test: egs/valentini/tt
+  train: /cs/usr/yair.shemer/AudioLab/encodec/egs/valentini/tr
+  valid: /cs/usr/yair.shemer/AudioLab/encodec/egs/valentini/cv
+  test: /cs/usr/yair.shemer/AudioLab/encodec/egs/valentini/tt
   matching: sort
 batch_size: 32

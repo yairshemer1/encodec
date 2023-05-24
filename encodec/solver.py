@@ -170,8 +170,7 @@ class Solver(object):
 
             best_loss = min(pull_metric(self.history, 'valid') + [valid_loss])
             metrics = {'train': train_loss, 'valid': valid_loss, 'best': best_loss,
-                       'lr_gen': self.scheduler_gen.get_last_lr(), 'lr_disc': self.scheduler_disc.get_last_lr()}
-
+                       'lr_gen': self.scheduler_gen.get_last_lr()[0], 'lr_disc': self.scheduler_disc.get_last_lr()[0]}
             # Save the best model
             if valid_loss == best_loss:
                 logger.info(bold('New best valid loss %.4f'), valid_loss)

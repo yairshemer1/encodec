@@ -56,9 +56,9 @@ class MultiResolutionMelLoss(torch.nn.Module):
         super(MultiResolutionMelLoss, self).__init__()
         self.mel_losses = torch.nn.ModuleList()
         for scale in scales:
-            hl = 2 ** scale
-            wl = hl // 4
-            fft = hl*2+1
+            wl = 2 ** scale
+            fft = 2 ** scale
+            hl = wl // 4
             self.mel_losses += [MelLoss(hop_length=hl, win_length=wl, fft_size=fft)]
 
     def forward(self, y_pred, y):

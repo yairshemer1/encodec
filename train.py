@@ -79,8 +79,8 @@ def run(args):
         model.cuda()
 
     # optimizer
-    optimizer_gen = torch.optim.Adam(model.parameters(), lr=args.lr_gen, betas=(0.9, args.beta2))
-    optimizer_disc = torch.optim.Adam(msd.parameters(), lr=args.lr_disc, betas=(0.9, args.beta2))
+    optimizer_gen = torch.optim.Adam(model.parameters(), lr=args.lr_gen, betas=(args.beta1, args.beta2))
+    optimizer_disc = torch.optim.Adam(msd.parameters(), lr=args.lr_disc, betas=(args.beta1, args.beta2))
 
     # init WandB
     if args.wandb:

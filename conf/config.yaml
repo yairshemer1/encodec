@@ -54,36 +54,20 @@ streaming: False  # use streaming evaluation for Demucs
 optim: adam
 lr_gen: 3e-4
 lr_disc: 3e-5
-lr_decay: 0.95
-beta2: 0.999
+lr_decay: 0.999
+beta1: 0.5
+beta2: 0.9
 loss: l1
 stft_loss: True
-stft_sc_factor: .5
-stft_mag_factor: .5
-wave_factor: 1
-mel_factor: 45
-gen_factor: 1
-disc_factor: 1
-feature_factor: 1
 epochs: 500
 batch_size: 64
 
-# Models
-model: demucs # either demucs or dwave
-demucs:
-  chin: 1
-  chout: 1
-  hidden: 48
-  max_hidden: 10000
-  causal: true
-  glu: true
-  depth: 5
-  kernel_size: 8
-  stride: 4
-  normalize: true
-  resample: 4
-  growth: 2
-  rescale: 0.1
+# Loss function factors
+l_t_wave: 0.1
+l_f_mel: 1
+l_g_gen: 3
+l_d_disc: 1
+l_feat_features: 3
 
 # Experiment launching, distributed
 ddp: false

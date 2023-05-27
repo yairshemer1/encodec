@@ -228,12 +228,12 @@ class Solver(object):
 
     def generator_step(self, y, y_pred, epoch, cross_valid=False):
         total_mel_loss, l1_mel_loss, l2_mel_loss = self.multi_res_mel_loss(y_pred.squeeze(1), y.squeeze(1))
-        wav_loss = F.l1_loss(y_pred, y) * self.args.wave_factor
-        mel_loss = total_mel_loss * self.args.mel_factor
+        wav_loss = F.l1_loss(y_pred, y) * self.args.l_t_wav
+        mel_loss = total_mel_loss * self.args.l_f_mel
         signal_loss = wav_loss + mel_loss
         y_ds_hat_r, y_ds_hat_g, fmap_s_r, fmap_s_g = self.msd(y, y_pred)
-        loss_fm_s = feature_loss(fmap_s_r, fmap_s_g)
-        loss_gen_s, _ = generator_loss(y_ds_hat_g)
+        loss_fm_s = feature_loss(fmap_s_r, fmap_s_g) * self.args.l_feat_features
+        loss_gen_s, _ = generator_loss(y_ds_hat_g) * self.args.l_g_gen
         loss_gen_all = loss_gen_s + loss_fm_s + signal_loss
         if self.args.wandb:
             wandb.log({"Mel loss": mel_loss,
@@ -250,6 +250,7 @@ class Solver(object):
     def disc_step(self, y, y_pred, epoch, cross_valid=False):
         y_ds_hat_r, y_ds_hat_g, _, _ = self.msd(y, y_pred)
         loss_disc_s, losses_disc_s_r, losses_disc_s_g = discriminator_loss(y_ds_hat_r, y_ds_hat_g)
+        loss_disc_s *= self.args.l_d_disc
 
         if not cross_valid:
             self.optimizer_disc.zero_grad()

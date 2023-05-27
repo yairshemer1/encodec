@@ -61,6 +61,7 @@ loss: l1
 stft_loss: True
 epochs: 500
 batch_size: 64
+disc_step_prob: 0.6667
 
 # Loss function factors
 l_t_wave: 0.1

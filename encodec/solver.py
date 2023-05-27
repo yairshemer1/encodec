@@ -4,6 +4,8 @@
 # This source code is licensed under the license found in the
 # LICENSE file in the root directory of this source tree.
 # author: adiyoss
+import random
+
 import wandb
 import json
 import logging
@@ -253,9 +255,11 @@ class Solver(object):
         loss_disc_s *= self.args.l_d_disc
 
         if not cross_valid:
-            self.optimizer_disc.zero_grad()
-            loss_disc_s.backward()
-            self.optimizer_disc.step()
+            prob = random.random()
+            if prob < self.args.disc_step_prob:
+                self.optimizer_disc.zero_grad()
+                loss_disc_s.backward()
+                self.optimizer_disc.step()
 
         if self.args.wandb:
             wandb.log({"Discriminator loss": loss_disc_s}, step=epoch)

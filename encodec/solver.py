@@ -235,7 +235,7 @@ class Solver(object):
         signal_loss = wav_loss + mel_loss
         y_ds_hat_r, y_ds_hat_g, fmap_s_r, fmap_s_g = self.msd(y, y_pred)
         loss_fm_s = feature_loss(fmap_s_r, fmap_s_g) * self.args.l_feat_features
-        loss_gen_s, _ = generator_loss(y_ds_hat_g) * self.args.l_g_gen
+        loss_gen_s = generator_loss(y_ds_hat_g) * self.args.l_g_gen
         loss_gen_all = loss_gen_s + loss_fm_s + signal_loss
         if self.args.wandb:
             wandb.log({"Mel loss": mel_loss,

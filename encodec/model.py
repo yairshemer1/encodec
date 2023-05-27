@@ -778,7 +778,7 @@ def generator_loss(disc_outputs):
         gen_losses.append(l)
         loss += l
 
-    return loss, gen_losses
+    return loss
 
 
 def test():

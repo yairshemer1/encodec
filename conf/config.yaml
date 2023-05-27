@@ -18,7 +18,7 @@ shift_same: false   # shift noise and clean by the same amount
 revecho: 0  # add reverb like augment
 
 # Logging and printing, and does not impact training
-wandb: false
+wandb: true
 exp_name: no_name
 num_prints: 1
 device: cuda

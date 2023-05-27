@@ -230,7 +230,7 @@ class Solver(object):
 
     def generator_step(self, y, y_pred, epoch, cross_valid=False):
         total_mel_loss, l1_mel_loss, l2_mel_loss = self.multi_res_mel_loss(y_pred.squeeze(1), y.squeeze(1))
-        wav_loss = F.l1_loss(y_pred, y) * self.args.l_t_wav
+        wav_loss = F.l1_loss(y_pred, y) * self.args.l_t_wave
         mel_loss = total_mel_loss * self.args.l_f_mel
         signal_loss = wav_loss + mel_loss
         y_ds_hat_r, y_ds_hat_g, fmap_s_r, fmap_s_g = self.msd(y, y_pred)

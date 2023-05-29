@@ -17,6 +17,7 @@ import torch
 import torch.nn.functional as F
 
 from . import augment, distrib, pretrained
+from .balancer import Balancer
 from .evaluate import evaluate
 from .model import discriminator_loss, feature_loss, generator_loss
 from .stft_loss import MultiResolutionMelLoss
@@ -33,22 +34,14 @@ class Solver(object):
         self.model = model
         self.msd = msd
         self.dmodel = distrib.wrap(model)
+        self.balancer = Balancer(weights={"l_t_wave": args.l_t_wave,
+                                          "l_f_mel": args.l_f_mel,
+                                          "l_feat_features": args.l_feat_features,
+                                          "l_g_gen": args.l_g_gen})
         self.optimizer_gen = optimizer_gen
         self.optimizer_disc = optimizer_disc
         self.scheduler_gen = torch.optim.lr_scheduler.ExponentialLR(optimizer_gen, gamma=args.lr_decay, last_epoch=-1)
         self.scheduler_disc = torch.optim.lr_scheduler.ExponentialLR(optimizer_disc, gamma=args.lr_decay, last_epoch=-1)
-        # data augment
-        augments = []
-        if args.remix:
-            augments.append(augment.Remix())
-        if args.bandmask:
-            augments.append(augment.BandMask(args.bandmask, sample_rate=args.sample_rate))
-        if args.shift:
-            augments.append(augment.Shift(args.shift, args.shift_same))
-        if args.revecho:
-            augments.append(
-                augment.RevEcho(args.revecho))
-        self.augment = torch.nn.Sequential(*augments)
 
         # Training config
         self.device = args.device
@@ -209,7 +202,6 @@ class Solver(object):
         total_loss = 0
         data_loader = self.tr_loader if not cross_valid else self.cv_loader
 
-        # get a different order for distributed training, otherwise this will get ignored
         data_loader.epoch = epoch
         label = ["Train", "Valid"][cross_valid]
         name = label + f" | Epoch {epoch + 1}"
@@ -229,20 +221,24 @@ class Solver(object):
         return distrib.average([total_loss / (i + 1)], i + 1)[0]
 
     def generator_step(self, y, y_pred, epoch, cross_valid=False):
-        total_mel_loss, l1_mel_loss, l2_mel_loss = self.multi_res_mel_loss(y_pred.squeeze(1), y.squeeze(1))
-        wav_loss = F.l1_loss(y_pred, y) * self.args.l_t_wave
-        mel_loss = total_mel_loss * self.args.l_f_mel
+        mel_loss, l1_mel_loss, l2_mel_loss = self.multi_res_mel_loss(y_pred.squeeze(1), y.squeeze(1))
+        wav_loss = F.l1_loss(y_pred, y)
         signal_loss = wav_loss + mel_loss
         y_ds_hat_r, y_ds_hat_g, fmap_s_r, fmap_s_g = self.msd(y, y_pred)
-        loss_fm_s = feature_loss(fmap_s_r, fmap_s_g) * self.args.l_feat_features
-        loss_gen_s = generator_loss(y_ds_hat_g) * self.args.l_g_gen
+        loss_fm_s = feature_loss(fmap_s_r, fmap_s_g)
+        loss_gen_s = generator_loss(y_ds_hat_g)
         loss_gen_all = loss_gen_s + loss_fm_s + signal_loss
+        losses = {"l_t_wave": wav_loss,
+                  "l_f_mel": mel_loss,
+                  "l_feat_features": loss_fm_s,
+                  "l_g_gen": loss_gen_s,}
         if self.args.wandb:
             wandb.log({"Mel loss": mel_loss,
                        "Wave loss": wav_loss,
                        "Feature loss": loss_fm_s,
                        "Generator loss": loss_gen_s}, step=epoch)
         if not cross_valid:
+            self.balancer.backward(losses=losses, input=y)
             self.optimizer_gen.zero_grad()
             loss_gen_all.backward()
             self.optimizer_gen.step()

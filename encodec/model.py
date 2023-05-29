@@ -495,7 +495,7 @@ class EncodecModel(nn.Module):
     def __init__(self,
                  encoder: m.SEANetEncoder,
                  decoder: m.SEANetDecoder,
-                 # quantizer: qt.ResidualVectorQuantizer,
+                 quantizer: qt.ResidualVectorQuantizer,
                  target_bandwidths: tp.List[float] = [3., 6., 12., 24.],
                  sample_rate: int = 16_000,
                  channels: int = 2,
@@ -516,9 +516,9 @@ class EncodecModel(nn.Module):
         self.overlap = overlap
         self.frame_rate = math.ceil(self.sample_rate / np.prod(self.encoder.ratios))
         self.name = name
-        # self.bits_per_codebook = int(math.log2(self.quantizer.bins))
-        # assert 2 ** self.bits_per_codebook == self.quantizer.bins, \
-        #     "quantizer bins must be a power of 2."
+        self.bits_per_codebook = int(math.log2(self.quantizer.bins))
+        assert 2 ** self.bits_per_codebook == self.quantizer.bins, \
+            "quantizer bins must be a power of 2."
 
     @property
     def segment_length(self) -> tp.Optional[int]:
@@ -573,11 +573,10 @@ class EncodecModel(nn.Module):
             scale = None
 
         emb = self.encoder(x)
-        # codes = self.quantizer.encode(emb, self.frame_rate, self.bandwidth)
-        # codes = codes.transpose(0, 1)
+        codes = self.quantizer.encode(emb, self.frame_rate, self.bandwidth)
+        codes = codes.transpose(0, 1)
         # codes is [B, K, T], with T frames, K nb of codebooks.
-        # return codes, scale
-        return emb
+        return codes, scale
 
     def decode(self, encoded_frames: tp.List[EncodedFrame]) -> torch.Tensor:
         """Decode the given frames into a waveform.
@@ -593,12 +592,12 @@ class EncodecModel(nn.Module):
         return _linear_overlap_add(frames, self.segment_stride or 1)
 
     def _decode_frame(self, encoded_frame: EncodedFrame) -> torch.Tensor:
-        # codes, scale = encoded_frame
-        # codes = codes.transpose(0, 1)
-        # emb = self.quantizer.decode(codes)
-        out = self.decoder(encoded_frame)
-        # if scale is not None:
-        #     out = out * scale.view(-1, 1, 1)
+        codes, scale = encoded_frame
+        codes = codes.transpose(0, 1)
+        emb = self.quantizer.decode(codes)
+        out = self.decoder(emb)
+        if scale is not None:
+            out = out * scale.view(-1, 1, 1)
         return out
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:

@@ -10,7 +10,7 @@ import logging
 import os
 import wandb
 import hydra
-
+from encodec import quantization as qt
 from encodec.executor import start_ddp_workers
 from encodec.model import MultiScaleDiscriminator
 # from encodec.hifi_gan_model import MultiScaleDiscriminator, MultiPeriodDiscriminator
@@ -38,9 +38,11 @@ def run(args):
     # model = Demucs(**args.demucs, sample_rate=args.sample_rate)
     encoder = m.SEANetEncoder(channels=1, norm='weight_norm', causal=True)
     decoder = m.SEANetDecoder(channels=1, norm='weight_norm', causal=True)
+    quantizer = qt.ResidualVectorQuantizer().to(args.device)
     model = EncodecModel(
             encoder,
             decoder,
+            quantizer=quantizer,
             normalize=False,
             segment=None,
         ).to(args.device)
@@ -88,7 +90,13 @@ def run(args):
     optimizer_disc = torch.optim.Adam(msd.parameters(), lr=args.lr_disc, betas=(args.beta1, args.beta2))
 
     # Construct Solver
-    solver = Solver(data=data, model=model, msd=msd, optimizer_gen=optimizer_gen, optimizer_disc=optimizer_disc, args=args)
+    solver = Solver(data=data,
+                    model=model,
+                    msd=msd,
+                    quantizer=quantizer,
+                    optimizer_gen=optimizer_gen,
+                    optimizer_disc=optimizer_disc,
+                    args=args)
     solver.train()
     if args.wandb:
         wandb.finish()

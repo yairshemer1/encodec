@@ -28,12 +28,13 @@ logger = logging.getLogger(__name__)
 
 
 class Solver(object):
-    def __init__(self, data, model, msd, optimizer_gen, optimizer_disc, args):
+    def __init__(self, data, model, msd, quantizer, optimizer_gen, optimizer_disc, args):
         self.tr_loader = data['tr_loader']
         self.cv_loader = data['cv_loader']
         self.tt_loader = data['tt_loader']
         self.model = model
         self.msd = msd
+        self.rvq = quantizer
         self.dmodel = distrib.wrap(model)
         self.balancer = Balancer(weights={"l_t_wave": args.l_t_wave,
                                           "l_f_mel": args.l_f_mel,
@@ -66,7 +67,6 @@ class Solver(object):
         self.num_prints = args.num_prints  # Number of times to log per epoch
         self.args = args
         self.multi_res_mel_loss = MultiResolutionMelLoss().to(self.device)
-        self.rvq = ResidualVectorQuantizer().to(self.device)
         self._reset()
 
     def _serialize(self):

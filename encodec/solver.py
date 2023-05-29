@@ -20,6 +20,7 @@ from . import augment, distrib, pretrained
 from .balancer import Balancer
 from .evaluate import evaluate
 from .model import discriminator_loss, feature_loss, generator_loss
+from .quantization import ResidualVectorQuantizer
 from .stft_loss import MultiResolutionMelLoss
 from .utils import bold, copy_state, pull_metric, serialize_model, swap_state, LogProgress
 
@@ -37,7 +38,8 @@ class Solver(object):
         self.balancer = Balancer(weights={"l_t_wave": args.l_t_wave,
                                           "l_f_mel": args.l_f_mel,
                                           "l_feat_features": args.l_feat_features,
-                                          "l_g_gen": args.l_g_gen})
+                                          "l_g_gen": args.l_g_gen,
+                                          "l_w_commit": args.l_w_commit,})
         self.optimizer_gen = optimizer_gen
         self.optimizer_disc = optimizer_disc
         self.scheduler_gen = torch.optim.lr_scheduler.ExponentialLR(optimizer_gen, gamma=args.lr_decay, last_epoch=-1)
@@ -64,12 +66,14 @@ class Solver(object):
         self.num_prints = args.num_prints  # Number of times to log per epoch
         self.args = args
         self.multi_res_mel_loss = MultiResolutionMelLoss().to(self.device)
+        self.rvq = ResidualVectorQuantizer().to(self.device)
         self._reset()
 
     def _serialize(self):
         package = {}
         package['model'] = serialize_model(self.model)
         package['msd'] = serialize_model(self.msd)
+        package['rvq'] = serialize_model(self.rvq)
         package['optimizer_gen'] = self.optimizer_gen.state_dict()
         package['optimizer_disc'] = self.optimizer_disc.state_dict()
         package['scheduler_gen'] = self.scheduler_gen.state_dict()
@@ -108,9 +112,11 @@ class Solver(object):
             package = torch.load(load_from, 'cpu')
             if load_best:
                 self.msd.load_state_dict(package['msd'])
+                self.rvq.load_state_dict(package['rvq'])
                 self.model.load_state_dict(package['best_state'])
             else:
                 self.msd.load_state_dict(package['msd']['state'])
+                self.rvq.load_state_dict(package['rvq']['state'])
                 self.model.load_state_dict(package['model']['state'])
             if 'optimizer_gen' in package and 'optimizer_disc' in package and not load_best:
                 self.optimizer_gen.load_state_dict(package['optimizer_gen'])
@@ -141,6 +147,7 @@ class Solver(object):
             # Train one epoch
             self.model.train()
             self.msd.train()
+            self.rvq.train()
             start = time.time()
             logger.info('-' * 70)
             logger.info("Training...")
@@ -226,17 +233,21 @@ class Solver(object):
         signal_loss = wav_loss + mel_loss
         y_ds_hat_r, y_ds_hat_g, fmap_s_r, fmap_s_g = self.msd(y, y_pred)
         loss_fm_s = feature_loss(fmap_s_r, fmap_s_g)
+        quant_res = self.rvq(y, frame_rate=16_000, bandwidth=[3., 6., 12., 24.])
+        loss_commitment = quant_res.penalty
         loss_gen_s = generator_loss(y_ds_hat_g)
-        loss_gen_all = loss_gen_s + loss_fm_s + signal_loss
+        loss_gen_all = loss_gen_s + loss_fm_s + signal_loss + loss_commitment
         losses = {"l_t_wave": wav_loss,
                   "l_f_mel": mel_loss,
                   "l_feat_features": loss_fm_s,
-                  "l_g_gen": loss_gen_s,}
+                  "l_g_gen": loss_gen_s,
+                  "l_w_commit": loss_commitment,}
         if self.args.wandb:
             wandb.log({"Mel loss": mel_loss,
                        "Wave loss": wav_loss,
                        "Feature loss": loss_fm_s,
-                       "Generator loss": loss_gen_s}, step=epoch)
+                       "Generator loss": loss_gen_s,
+                       "Commitment loss": loss_commitment}, step=epoch)
         if not cross_valid:
             self.optimizer_gen.zero_grad()
             self.balancer.backward(losses=losses, input=y_pred)

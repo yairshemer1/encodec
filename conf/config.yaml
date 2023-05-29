@@ -69,6 +69,7 @@ l_f_mel: 1
 l_g_gen: 3
 l_d_disc: 1
 l_feat_features: 3
+l_w_commit: 1
 
 # Experiment launching, distributed
 ddp: false

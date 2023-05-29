@@ -507,7 +507,7 @@ class EncodecModel(nn.Module):
         self.bandwidth: tp.Optional[float] = None
         self.target_bandwidths = target_bandwidths
         self.encoder = encoder
-        # self.quantizer = quantizer
+        self.quantizer = quantizer
         self.decoder = decoder
         self.sample_rate = sample_rate
         self.channels = channels

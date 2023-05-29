@@ -20,7 +20,6 @@ from . import augment, distrib, pretrained
 from .balancer import Balancer
 from .evaluate import evaluate
 from .model import discriminator_loss, feature_loss, generator_loss
-from .quantization import ResidualVectorQuantizer
 from .stft_loss import MultiResolutionMelLoss
 from .utils import bold, copy_state, pull_metric, serialize_model, swap_state, LogProgress
 
@@ -233,7 +232,7 @@ class Solver(object):
         signal_loss = wav_loss + mel_loss
         y_ds_hat_r, y_ds_hat_g, fmap_s_r, fmap_s_g = self.msd(y, y_pred)
         loss_fm_s = feature_loss(fmap_s_r, fmap_s_g)
-        quant_res = self.rvq(y, frame_rate=16_000, bandwidth=[3., 6., 12., 24.])
+        quant_res = self.rvq(y, frame_rate=16_000, bandwidth=24.0)
         loss_commitment = quant_res.penalty
         loss_gen_s = generator_loss(y_ds_hat_g)
         loss_gen_all = loss_gen_s + loss_fm_s + signal_loss + loss_commitment

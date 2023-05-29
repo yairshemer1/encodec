@@ -238,9 +238,8 @@ class Solver(object):
                        "Feature loss": loss_fm_s,
                        "Generator loss": loss_gen_s}, step=epoch)
         if not cross_valid:
-            self.balancer.backward(losses=losses, input=y)
             self.optimizer_gen.zero_grad()
-            loss_gen_all.backward()
+            self.balancer.backward(losses=losses, input=y_pred)
             self.optimizer_gen.step()
 
         return loss_gen_all.item()

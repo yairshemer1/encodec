@@ -49,8 +49,8 @@ def run(args):
             logger.info('Field: %.1f ms', field / args.sample_rate * 1000)
         return
 
-    assert args.batch_size % distrib.world_size == 0
-    args.batch_size //= distrib.world_size
+    assert args.batch_size % distrib.world_size() == 0
+    args.batch_size //= distrib.world_size()
 
     length = int(args.segment * args.sample_rate)
     stride = int(args.stride * args.sample_rate)

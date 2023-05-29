@@ -27,6 +27,11 @@ def run(args):
     import encodec.modules as m
     distrib.init(args)
 
+    # init WandB
+    if args.wandb:
+        wandb.login(key="e4926ddda8d522caa55b71b4da8ce0a702a32e78")
+        wandb.init(project="encodec-reconstruct", name=args.exp_name, resume=True)
+
     # torch also initialize cuda seed if available
     torch.manual_seed(args.seed)
 
@@ -81,11 +86,6 @@ def run(args):
     # optimizer
     optimizer_gen = torch.optim.Adam(model.parameters(), lr=args.lr_gen, betas=(args.beta1, args.beta2))
     optimizer_disc = torch.optim.Adam(msd.parameters(), lr=args.lr_disc, betas=(args.beta1, args.beta2))
-
-    # init WandB
-    if args.wandb:
-        wandb.login(key="e4926ddda8d522caa55b71b4da8ce0a702a32e78")
-        wandb.init(project="encodec-reconstruct", name=args.exp_name)
 
     # Construct Solver
     solver = Solver(data=data, model=model, msd=msd, optimizer_gen=optimizer_gen, optimizer_disc=optimizer_disc, args=args)

@@ -54,19 +54,19 @@ group.add_argument("--noisy_json", type=str, default=None,
                    help="json file including noisy wav files")
 
 
-def get_estimate(model, clean, args):
+def get_pred(model, y, args):
     torch.set_num_threads(1)
     if args.streaming:
         streamer = DemucsStreamer(model, dry=args.dry)
         with torch.no_grad():
-            estimate = torch.cat([
-                streamer.feed(clean[0]),
+            y_pred = torch.cat([
+                streamer.feed(y[0]),
                 streamer.flush()], dim=1)[None]
     else:
         with torch.no_grad():
-            estimate, _ = model(clean)
-            estimate = (1 - args.dry) * estimate + args.dry * clean
-    return estimate
+            y_pred, _ = model(y)
+            y_pred = (1 - args.dry) * y_pred + args.dry * y
+    return y_pred
 
 
 def save_wavs(estimates, noisy_sigs, filenames, out_dir, sr=16_000):
@@ -103,7 +103,7 @@ def get_dataset(args, sample_rate, channels):
 
 
 def _estimate_and_save(model, noisy_signals, filenames, out_dir, args):
-    estimate = get_estimate(model, noisy_signals, args)
+    estimate = get_pred(model, noisy_signals, args)
     save_wavs(estimate, noisy_signals, filenames, out_dir, sr=model.sample_rate)
 
 
@@ -139,7 +139,7 @@ def enhance(args, model=None, local_out_dir=None):
                                 model, noisy_signals, filenames, out_dir, args))
             else:
                 # Forward
-                estimate = get_estimate(model, noisy_signals, args)
+                estimate = get_pred(model, noisy_signals, args)
                 save_wavs(estimate, noisy_signals, filenames, out_dir, sr=model.sample_rate)
 
         if pendings:

@@ -4,18 +4,17 @@
 # This source code is licensed under the license found in the
 # LICENSE file in the root directory of this source tree.
 # author: adiyoss
+import random
+
 import wandb
 import argparse
-from concurrent.futures import ProcessPoolExecutor
-import json
 import logging
 import sys
-import torch
+import torch.nn.functional as F
 
 from .data import CleanSet
-from .enhance import add_flags, get_estimate
+from .enhance import add_flags, get_pred
 from . import distrib, pretrained
-from .utils import bold, LogProgress
 
 logger = logging.getLogger(__name__)
 
@@ -30,9 +29,6 @@ parser.add_argument('-v', '--verbose', action='store_const', const=logging.DEBUG
 
 
 def evaluate(args, model=None, data_loader=None):
-    total_cnt = 0
-    updates = 5
-
     # Load model
     if not model:
         model = pretrained.get_model(args).to(args.device)
@@ -43,41 +39,35 @@ def evaluate(args, model=None, data_loader=None):
         dataset = CleanSet(args.data_dir,
                                 matching=args.matching, sample_rate=model.sample_rate)
         data_loader = distrib.loader(dataset, batch_size=1, num_workers=2)
-    pendings = []
-    with ProcessPoolExecutor(args.num_workers) as pool:
-        with torch.no_grad():
-            iterator = LogProgress(logger, data_loader, name="Eval estimates")
-            for i, data in enumerate(iterator):
-                # Get batch data
-                clean = data.to(args.device)
-                # If device is CPU, we do parallel evaluation in each CPU worker.
-                if args.device == 'cpu':
-                    pendings.append(
-                        pool.submit(_estimate_and_run_metrics, clean, model, args, data_loader.epoch))
-                else:
-                    estimate = get_estimate(model, clean, args)
-                    estimate = estimate.cpu()
-                    clean = clean.cpu()
-                    pendings.append(
-                        pool.submit(_run_metrics, clean, estimate, args, model.sample_rate, data_loader.epoch))
-                total_cnt += clean.shape[0]
 
-        for pending in LogProgress(logger, pendings, updates, name="Eval metrics"):
-            pending.result()
+    dataset = data_loader.dataset
+    for i, example in enumerate([dataset[0], dataset[1]]):
+        example = example[None, :]
+        example = example.to(args.device)
+        if args.device == 'cpu':
+            _estimate_and_run_metrics(y=example, model=model, args=args, epoch=data_loader.epoch, example_ind=i)
+        else:
+            y_pred = get_pred(model, example, args)
+            y_pred = y_pred.cpu()
+            y = example.cpu()
+            _run_metrics(y=y, y_pred=y_pred, args=args, epoch=data_loader.epoch, sr=model.sample_rate, example_ind=i)
 
 
-def _estimate_and_run_metrics(clean, model, args, epoch):
-    estimate = get_estimate(model, clean, args)
-    return _run_metrics(clean, estimate, args, sr=model.sample_rate, epoch=epoch)
+def _estimate_and_run_metrics(y, model, args, epoch, example_ind):
+    y_pred = get_pred(model, y, args)
+    return _run_metrics(y, y_pred, args, sr=model.sample_rate, epoch=epoch, example_ind=example_ind)
 
 
-def _run_metrics(clean, estimate, args, sr, epoch):
-    estimate = estimate.numpy()[:, 0]
-    clean = clean.numpy()[:, 0]
+def _run_metrics(y, y_pred, args, sr, epoch, example_ind):
+    l1_loss = F.l1_loss(y_pred, y)
+    y_pred = y_pred.numpy()[:, 0]
+    y = y.numpy()[:, 0]
+
     if args.wandb:
         assert epoch, "epoch must not be None"
-        wandb.log({"estimated": wandb.Audio(estimate.flatten(), caption="estimated", sample_rate=sr)}, step=epoch)
-        wandb.log({"target": wandb.Audio(clean.flatten(), caption="target", sample_rate=sr)}, step=epoch)
+        wandb.log({f"prediction_{example_ind}": wandb.Audio(y_pred.flatten(), caption="prediction", sample_rate=sr)}, step=epoch)
+        wandb.log({f"target_{example_ind}": wandb.Audio(y.flatten(), caption="target", sample_rate=sr)}, step=epoch)
+        wandb.log({f"Test_{example_ind} L1_loss": l1_loss}, step=epoch)
 
 
 def main():

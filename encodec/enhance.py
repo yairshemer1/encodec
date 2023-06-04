@@ -64,7 +64,7 @@ def get_estimate(model, clean, args):
                 streamer.flush()], dim=1)[None]
     else:
         with torch.no_grad():
-            estimate = model(clean)
+            estimate, _ = model(clean)
             estimate = (1 - args.dry) * estimate + args.dry * clean
     return estimate
 

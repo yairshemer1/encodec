@@ -93,7 +93,6 @@ def run(args):
     solver = Solver(data=data,
                     model=model,
                     msd=msd,
-                    quantizer=quantizer,
                     optimizer_gen=optimizer_gen,
                     optimizer_disc=optimizer_disc,
                     args=args)

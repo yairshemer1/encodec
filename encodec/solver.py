@@ -27,13 +27,12 @@ logger = logging.getLogger(__name__)
 
 
 class Solver(object):
-    def __init__(self, data, model, msd, quantizer, optimizer_gen, optimizer_disc, args):
+    def __init__(self, data, model, msd, optimizer_gen, optimizer_disc, args):
         self.tr_loader = data['tr_loader']
         self.cv_loader = data['cv_loader']
         self.tt_loader = data['tt_loader']
         self.model = model
         self.msd = msd
-        self.rvq = quantizer
         self.dmodel = distrib.wrap(model)
         self.balancer = Balancer(weights={"l_t_wave": args.l_t_wave,
                                           "l_f_mel": args.l_f_mel,
@@ -72,7 +71,6 @@ class Solver(object):
         package = {}
         package['model'] = serialize_model(self.model)
         package['msd'] = serialize_model(self.msd)
-        package['rvq'] = serialize_model(self.rvq)
         package['optimizer_gen'] = self.optimizer_gen.state_dict()
         package['optimizer_disc'] = self.optimizer_disc.state_dict()
         package['scheduler_gen'] = self.scheduler_gen.state_dict()
@@ -111,11 +109,9 @@ class Solver(object):
             package = torch.load(load_from, 'cpu')
             if load_best:
                 self.msd.load_state_dict(package['msd'])
-                self.rvq.load_state_dict(package['rvq'])
                 self.model.load_state_dict(package['best_state'])
             else:
                 self.msd.load_state_dict(package['msd']['state'])
-                self.rvq.load_state_dict(package['rvq']['state'])
                 self.model.load_state_dict(package['model']['state'])
             if 'optimizer_gen' in package and 'optimizer_disc' in package and not load_best:
                 self.optimizer_gen.load_state_dict(package['optimizer_gen'])
@@ -146,7 +142,6 @@ class Solver(object):
             # Train one epoch
             self.model.train()
             self.msd.train()
-            self.rvq.train()
             start = time.time()
             logger.info('-' * 70)
             logger.info("Training...")
@@ -214,7 +209,9 @@ class Solver(object):
         logprog = LogProgress(logger, data_loader, updates=self.num_prints, name=name)
         for i, data in enumerate(logprog):
             y = data.to(self.device)
-            y_pred = self.dmodel(y)
+            y_pred, commit_loss = self.dmodel(y)
+            if self.args.wandb and not cross_valid:
+                wandb.log({"Commitment loss": commit_loss}, step=epoch)
             # apply a loss function after each layer
             with torch.autograd.set_detect_anomaly(True):
                 y_pred_detach = torch.clone(y_pred).detach()
@@ -232,21 +229,18 @@ class Solver(object):
         signal_loss = wav_loss + mel_loss
         y_ds_hat_r, y_ds_hat_g, fmap_s_r, fmap_s_g = self.msd(y, y_pred)
         loss_fm_s = feature_loss(fmap_s_r, fmap_s_g)
-        quant_res = self.rvq(y, frame_rate=16_000, bandwidth=24.0)
-        loss_commitment = quant_res.penalty
+
         loss_gen_s = generator_loss(y_ds_hat_g)
-        loss_gen_all = loss_gen_s + loss_fm_s + signal_loss + loss_commitment
+        loss_gen_all = loss_gen_s + loss_fm_s + signal_loss
         losses = {"l_t_wave": wav_loss,
                   "l_f_mel": mel_loss,
                   "l_feat_features": loss_fm_s,
-                  "l_g_gen": loss_gen_s,
-                  "l_w_commit": loss_commitment,}
+                  "l_g_gen": loss_gen_s}
         if self.args.wandb:
             wandb.log({"Mel loss": mel_loss,
                        "Wave loss": wav_loss,
                        "Feature loss": loss_fm_s,
-                       "Generator loss": loss_gen_s,
-                       "Commitment loss": loss_commitment}, step=epoch)
+                       "Generator loss": loss_gen_s}, step=epoch)
         if not cross_valid:
             self.optimizer_gen.zero_grad()
             self.balancer.backward(losses=losses, input=y_pred)

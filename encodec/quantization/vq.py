@@ -14,6 +14,7 @@ import torch
 from torch import nn
 
 from .core_vq import ResidualVectorQuantization
+from ..utils import capture_init
 
 
 @dataclass
@@ -38,6 +39,7 @@ class ResidualVectorQuantizer(nn.Module):
             that have an exponential moving average cluster size less than the specified threshold with
             randomly selected vector from the current batch.
     """
+    @capture_init
     def __init__(
         self,
         dimension: int = 256,

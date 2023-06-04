@@ -601,8 +601,14 @@ class EncodecModel(nn.Module):
         return out
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        frames = self.encode(x)
-        return self.decode(frames)[:, :, :x.shape[-1]]
+        input_len = x.shape[-1]
+        encoded = self.encoder(x)
+        quantized_result = self.quantizer(encoded, frame_rate=self.frame_rate, bandwidth=self.bandwidth)
+        quantized = quantized_result.quantized
+        penalty = quantized_result.penalty
+        decoded = self.decoder(quantized)
+        decoded = decoded[:, :, :input_len]
+        return decoded, penalty
 
     def set_target_bandwidth(self, bandwidth: float):
         if bandwidth not in self.target_bandwidths:

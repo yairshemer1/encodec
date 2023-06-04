@@ -304,9 +304,6 @@ class VectorQuantization(nn.Module):
         loss = torch.tensor([0.0], device=device, requires_grad=self.training)
 
         if self.training:
-            warnings.warn('When using RVQ in training model, first check '
-                          'https://github.com/facebookresearch/encodec/issues/25 . '
-                          'The bug wasn\'t fixed here for reproducibility.')
             if self.commitment_weight > 0:
                 commit_loss = F.mse_loss(quantize.detach(), x)
                 loss = loss + commit_loss * self.commitment_weight

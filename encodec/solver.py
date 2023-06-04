@@ -188,7 +188,7 @@ class Solver(object):
             logger.info('-' * 70)
             logger.info(bold(f"Overall Summary | Epoch {epoch + 1} | {info}"))
 
-            if distrib.rank == 0:
+            if distrib.rank() == 0:
                 json.dump(self.history, open(self.history_file, "w"), indent=2)
                 # Save model each epoch
                 if self.checkpoint:

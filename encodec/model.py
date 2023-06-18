@@ -23,7 +23,7 @@ from . import quantization as qt
 from . import modules as m
 from .utils import _check_checksum, _linear_overlap_add, _get_checkpoint_url
 
-EncodedFrame = tp.Tuple[torch.Tensor, tp.Optional[torch.Tensor]]
+EncodedFrame = tp.Tuple[torch.Tensor, tp.Optional[torch.Tensor], tp.Optional[torch.Tensor]]
 
 ROOT_URL = 'https://dl.fbaipublicfiles.com/encodec/v0/'
 
@@ -573,10 +573,12 @@ class EncodecModel(nn.Module):
             scale = None
 
         emb = self.encoder(x)
-        codes = self.quantizer.encode(emb, self.frame_rate, self.bandwidth)
+        quantized_results = self.quantizer(emb, self.frame_rate, self.bandwidth)
+        codes = quantized_results.codes
+        penalty = quantized_results.penalty
         codes = codes.transpose(0, 1)
         # codes is [B, K, T], with T frames, K nb of codebooks.
-        return codes, scale
+        return codes, scale, penalty
 
     def decode(self, encoded_frames: tp.List[EncodedFrame]) -> torch.Tensor:
         """Decode the given frames into a waveform.
@@ -592,7 +594,7 @@ class EncodecModel(nn.Module):
         return _linear_overlap_add(frames, self.segment_stride or 1)
 
     def _decode_frame(self, encoded_frame: EncodedFrame) -> torch.Tensor:
-        codes, scale = encoded_frame
+        codes, scale, penalty = encoded_frame
         codes = codes.transpose(0, 1)
         emb = self.quantizer.decode(codes)
         out = self.decoder(emb)
@@ -600,15 +602,10 @@ class EncodecModel(nn.Module):
             out = out * scale.view(-1, 1, 1)
         return out
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        input_len = x.shape[-1]
-        encoded = self.encoder(x)
-        quantized_result = self.quantizer(encoded, frame_rate=self.frame_rate, bandwidth=self.bandwidth)
-        quantized = quantized_result.quantized
-        penalty = quantized_result.penalty
-        decoded = self.decoder(quantized)
-        decoded = decoded[:, :, :input_len]
-        return decoded, penalty
+    def forward(self, x: torch.Tensor) -> [torch.Tensor, torch.Tensor]:
+        frames = self.encode(x)
+        commit_loss = sum(penalty for _, _, penalty in frames) / len(frames)
+        return self.decode(frames)[:, :, :x.shape[-1]], commit_loss
 
     def set_target_bandwidth(self, bandwidth: float):
         if bandwidth not in self.target_bandwidths:

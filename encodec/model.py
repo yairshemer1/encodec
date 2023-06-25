@@ -543,7 +543,7 @@ class EncodecModel(nn.Module):
         """
         assert x.dim() == 3
         _, channels, length = x.shape
-        assert channels > 0 and channels <= 2
+        assert 0 < channels <= 2
         segment_length = self.segment_length
         if segment_length is None:
             segment_length = length

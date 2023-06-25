@@ -5,7 +5,8 @@
 # LICENSE file in the root directory of this source tree.
 # author: adiyoss
 import random
-
+from collections import defaultdict
+import numpy as np
 import wandb
 import json
 import logging
@@ -145,7 +146,7 @@ class Solver(object):
             start = time.time()
             logger.info('-' * 70)
             logger.info("Training...")
-            train_loss = self._run_one_epoch(epoch)
+            losses_record, train_loss = self._run_one_epoch(epoch)
             logger.info(
                 bold(f'Train Summary | End of Epoch {epoch + 1} | '
                      f'Time {time.time() - start:.2f}s | Train Loss {train_loss:.5f}'))
@@ -156,7 +157,7 @@ class Solver(object):
                 logger.info('Cross validation...')
                 self.model.eval()
                 with torch.no_grad():
-                    valid_loss = self._run_one_epoch(epoch, cross_valid=True)
+                    losses_record, valid_loss = self._run_one_epoch(epoch, cross_valid=True)
                 logger.info(
                     bold(f'Valid Summary | End of Epoch {epoch + 1} | '
                          f'Time {time.time() - start:.2f}s | Valid Loss {valid_loss:.5f}'))
@@ -183,6 +184,8 @@ class Solver(object):
                     evaluate(args=self.args, model=self.model, data_loader=self.tt_loader)
 
             if self.args.wandb:
+                for loss in losses_record:
+                    wandb.log({loss: np.mean(losses_record[loss])}, step=epoch)
                 wandb.log(metrics, step=epoch)
             self.history.append(metrics)
             info = " | ".join(f"{k.capitalize()} {v:.05g}" for k, v in metrics.items())
@@ -207,6 +210,7 @@ class Solver(object):
         label = ["Train", "Valid"][cross_valid]
         name = label + f" | Epoch {epoch + 1}"
         logprog = LogProgress(logger, data_loader, updates=self.num_prints, name=name)
+        losses_record = defaultdict(list)
         for i, data in enumerate(logprog):
             y = data.to(self.device)
             quant_res = self.dmodel(y)
@@ -217,46 +221,47 @@ class Solver(object):
                 commitment_loss = quant_res.penalty
             if commitment_loss.requires_grad:
                 commitment_loss.backward(retain_graph=True)
-                if self.args.wandb:
-                    wandb.log({"Commitment loss": commitment_loss.item()}, step=epoch)
+                losses_record["Commitment loss"].append(commitment_loss.item())
+
             # apply a loss function after each layer
             with torch.autograd.set_detect_anomaly(True):
                 y_pred_detach = torch.clone(y_pred).detach()
-                disc_loss = self.disc_step(y=y, y_pred=y_pred_detach, cross_valid=cross_valid, epoch=epoch)
-                gen_loss = self.generator_step(y=y, y_pred=y_pred, cross_valid=cross_valid, epoch=epoch)
-                total_loss = gen_loss + disc_loss
+                losses_record = self.disc_step(y=y, y_pred=y_pred_detach, cross_valid=cross_valid, losses_record=losses_record)
+                losses_record = self.generator_step(y=y, y_pred=y_pred, cross_valid=cross_valid, losses_record=losses_record)
 
             logprog.update(loss=format(total_loss / (i + 1), ".5f"))
 
-        return distrib.average([total_loss / (i + 1)], i + 1)[0]
+        train_loss = sum([np.mean(losses_record[loss]) for loss in losses_record])
+        return losses_record, train_loss
 
-    def generator_step(self, y, y_pred, epoch, cross_valid=False):
+    def generator_step(self, y, y_pred, losses_record, cross_valid=False):
         # init zero loss, add penalty of commit_loss and backward
         mel_loss, l1_mel_loss, l2_mel_loss = self.multi_res_mel_loss(y_pred.squeeze(1), y.squeeze(1))
         wav_loss = F.l1_loss(y_pred, y)
-        signal_loss = wav_loss + mel_loss
+
         y_ds_hat_r, y_ds_hat_g, fmap_s_r, fmap_s_g = self.msd(y, y_pred)
         loss_fm_s = feature_loss(fmap_s_r, fmap_s_g)
 
         loss_gen_s = generator_loss(y_ds_hat_g)
-        loss_gen_all = loss_gen_s + loss_fm_s + signal_loss
+
         losses = {"l_t_wave": wav_loss,
                   "l_f_mel": mel_loss,
                   "l_feat_features": loss_fm_s,
                   "l_g_gen": loss_gen_s}
-        if self.args.wandb:
-            wandb.log({"Mel loss": mel_loss,
-                       "Wave loss": wav_loss,
-                       "Feature loss": loss_fm_s,
-                       "Generator loss": loss_gen_s}, step=epoch)
+
+        losses_record["Mel loss"].append(mel_loss.item())
+        losses_record["Wave loss"].append(wav_loss.item())
+        losses_record["Feature loss"].append(loss_fm_s.item())
+        losses_record["Generator loss"].append(loss_gen_s.item())
+
         if not cross_valid:
             self.optimizer_gen.zero_grad()
             self.balancer.backward(losses=losses, input=y_pred)
             self.optimizer_gen.step()
 
-        return loss_gen_all.item()
+        return losses_record
 
-    def disc_step(self, y, y_pred, epoch, cross_valid=False):
+    def disc_step(self, y, y_pred, losses_record, cross_valid=False):
         y_ds_hat_r, y_ds_hat_g, _, _ = self.msd(y, y_pred)
         loss_disc_s, losses_disc_s_r, losses_disc_s_g = discriminator_loss(y_ds_hat_r, y_ds_hat_g)
         loss_disc_s *= self.args.l_d_disc
@@ -268,6 +273,6 @@ class Solver(object):
                 loss_disc_s.backward()
                 self.optimizer_disc.step()
 
-        if self.args.wandb:
-            wandb.log({"Discriminator loss": loss_disc_s}, step=epoch)
-        return loss_disc_s.item()
+        losses_record["Discriminator loss"].append(loss_disc_s.item())
+
+        return losses_record

@@ -56,16 +56,10 @@ group.add_argument("--noisy_json", type=str, default=None,
 
 def get_pred(model, y, args):
     torch.set_num_threads(1)
-    if args.streaming:
-        streamer = DemucsStreamer(model, dry=args.dry)
-        with torch.no_grad():
-            y_pred = torch.cat([
-                streamer.feed(y[0]),
-                streamer.flush()], dim=1)[None]
-    else:
-        with torch.no_grad():
-            y_pred, _ = model(y)
-            y_pred = (1 - args.dry) * y_pred + args.dry * y
+    with torch.no_grad():
+        quant_res = model(y)
+        y_pred = quant_res.quantized
+        y_pred = (1 - args.dry) * y_pred + args.dry * y
     return y_pred
 
 

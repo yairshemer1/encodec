@@ -23,7 +23,7 @@ from . import quantization as qt
 from . import modules as m
 from .utils import _check_checksum, _linear_overlap_add, _get_checkpoint_url
 
-EncodedFrame = tp.Tuple[torch.Tensor, tp.Optional[torch.Tensor], tp.Optional[torch.Tensor]]
+EncodedFrame = tp.Tuple[torch.Tensor, tp.Optional[torch.Tensor]]
 
 ROOT_URL = 'https://dl.fbaipublicfiles.com/encodec/v0/'
 
@@ -559,26 +559,14 @@ class EncodecModel(nn.Module):
         return encoded_frames
 
     def _encode_frame(self, x: torch.Tensor) -> EncodedFrame:
-        length = x.shape[-1]
-        duration = length / self.sample_rate
-        assert self.segment is None or duration <= 1e-5 + self.segment
-
-        if self.normalize:
-            mono = x.mean(dim=1, keepdim=True)
-            volume = mono.pow(2).mean(dim=2, keepdim=True).sqrt()
-            scale = 1e-8 + volume
-            x = x / scale
-            scale = scale.view(-1, 1)
-        else:
-            scale = None
+        x, scale = self.preprocess(x)
 
         emb = self.encoder(x)
-        quantized_results = self.quantizer(emb, self.frame_rate, self.bandwidth)
-        codes = quantized_results.codes
-        penalty = quantized_results.penalty
+        codes = self.quantizer.encode(emb, self.frame_rate, self.bandwidth)
+
         codes = codes.transpose(0, 1)
         # codes is [B, K, T], with T frames, K nb of codebooks.
-        return codes, scale, penalty
+        return codes, scale
 
     def decode(self, encoded_frames: tp.List[EncodedFrame]) -> torch.Tensor:
         """Decode the given frames into a waveform.
@@ -594,18 +582,50 @@ class EncodecModel(nn.Module):
         return _linear_overlap_add(frames, self.segment_stride or 1)
 
     def _decode_frame(self, encoded_frame: EncodedFrame) -> torch.Tensor:
-        codes, scale, penalty = encoded_frame
+        codes, scale = encoded_frame
         codes = codes.transpose(0, 1)
         emb = self.quantizer.decode(codes)
         out = self.decoder(emb)
-        if scale is not None:
-            out = out * scale.view(-1, 1, 1)
+        self.postprocess(out, scale)
         return out
 
-    def forward(self, x: torch.Tensor) -> [torch.Tensor, torch.Tensor]:
-        frames = self.encode(x)
-        commit_loss = sum(penalty for _, _, penalty in frames) / len(frames)
-        return self.decode(frames)[:, :, :x.shape[-1]], commit_loss
+    def forward(self, x: torch.Tensor) -> qt.QuantizedResult:
+        assert x.dim() == 3
+        length = x.shape[-1]
+        x, scale = self.preprocess(x)
+
+        emb = self.encoder(x)
+        q_res = self.quantizer(emb, self.frame_rate)
+        out = self.decoder(q_res.quantized)
+
+        # remove extra padding added by the encoder and decoder
+        assert out.shape[-1] >= length, (out.shape[-1], length)
+        out = out[..., :length]
+
+        q_res.quantized = self.postprocess(out, scale)
+
+        return q_res
+
+    def postprocess(self, x: torch.Tensor, scale: tp.Optional[torch.Tensor] = None) -> torch.Tensor:
+        if scale is not None:
+            assert self.normalize
+            x = x * scale.view(-1, 1, 1)
+        return x
+
+    def preprocess(self, x):
+        length = x.shape[-1]
+        duration = length / self.sample_rate
+        assert self.segment is None or duration <= 1e-5 + self.segment
+
+        if self.normalize:
+            mono = x.mean(dim=1, keepdim=True)
+            volume = mono.pow(2).mean(dim=2, keepdim=True).sqrt()
+            scale = 1e-8 + volume
+            x = x / scale
+            scale = scale.view(-1, 1)
+        else:
+            scale = None
+        return x, scale
 
     def set_target_bandwidth(self, bandwidth: float):
         if bandwidth not in self.target_bandwidths:

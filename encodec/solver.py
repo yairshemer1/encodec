@@ -209,9 +209,16 @@ class Solver(object):
         logprog = LogProgress(logger, data_loader, updates=self.num_prints, name=name)
         for i, data in enumerate(logprog):
             y = data.to(self.device)
-            y_pred, commit_loss = self.dmodel(y)
-            if self.args.wandb and not cross_valid:
-                wandb.log({"Commitment loss": commit_loss}, step=epoch)
+            quant_res = self.dmodel(y)
+            y_pred = quant_res.quantized
+
+            commitment_loss = torch.tensor(0.0).to(self.device)
+            if quant_res.penalty is not None and quant_res.penalty.requires_grad:
+                commitment_loss = quant_res.penalty
+            if commitment_loss.requires_grad:
+                commitment_loss.backward(retain_graph=True)
+                if self.args.wandb:
+                    wandb.log({"Commitment loss": commitment_loss.item()}, step=epoch)
             # apply a loss function after each layer
             with torch.autograd.set_detect_anomaly(True):
                 y_pred_detach = torch.clone(y_pred).detach()
@@ -224,6 +231,7 @@ class Solver(object):
         return distrib.average([total_loss / (i + 1)], i + 1)[0]
 
     def generator_step(self, y, y_pred, epoch, cross_valid=False):
+        # init zero loss, add penalty of commit_loss and backward
         mel_loss, l1_mel_loss, l2_mel_loss = self.multi_res_mel_loss(y_pred.squeeze(1), y.squeeze(1))
         wav_loss = F.l1_loss(y_pred, y)
         signal_loss = wav_loss + mel_loss

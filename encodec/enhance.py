@@ -57,8 +57,8 @@ group.add_argument("--noisy_json", type=str, default=None,
 def get_pred(model, y, args):
     torch.set_num_threads(1)
     with torch.no_grad():
-        quant_res = model(y)
-        y_pred = quant_res.quantized
+        y_pred = model(y)
+        # y_pred = quant_res.quantized
         y_pred = (1 - args.dry) * y_pred + args.dry * y
     return y_pred
 

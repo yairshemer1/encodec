@@ -213,15 +213,15 @@ class Solver(object):
         losses_record = defaultdict(list)
         for i, data in enumerate(logprog):
             y = data.to(self.device)
-            quant_res = self.dmodel(y)
-            y_pred = quant_res.quantized
+            y_pred = self.dmodel(y)
+            # y_pred = quant_res.quantized
 
-            commitment_loss = torch.tensor(0.0).to(self.device)
-            if quant_res.penalty is not None and quant_res.penalty.requires_grad:
-                commitment_loss = quant_res.penalty
-            if commitment_loss.requires_grad:
-                commitment_loss.backward(retain_graph=True)
-                losses_record["Commitment loss"].append(commitment_loss.item())
+            # commitment_loss = torch.tensor(0.0).to(self.device)
+            # if quant_res.penalty is not None and quant_res.penalty.requires_grad:
+            #     commitment_loss = quant_res.penalty
+            # if commitment_loss.requires_grad:
+            #     commitment_loss.backward(retain_graph=True)
+            #     losses_record["Commitment loss"].append(commitment_loss.item())
 
             # apply a loss function after each layer
             with torch.autograd.set_detect_anomaly(True):

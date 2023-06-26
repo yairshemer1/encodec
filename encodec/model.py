@@ -595,16 +595,16 @@ class EncodecModel(nn.Module):
         x, scale = self.preprocess(x)
 
         emb = self.encoder(x)
-        q_res = self.quantizer(emb, self.frame_rate)
-        out = self.decoder(q_res.quantized)
+        # q_res = self.quantizer(emb, self.frame_rate)
+        out = self.decoder(emb)
 
         # remove extra padding added by the encoder and decoder
         assert out.shape[-1] >= length, (out.shape[-1], length)
         out = out[..., :length]
 
-        q_res.quantized = self.postprocess(out, scale)
+        out = self.postprocess(out, scale)
 
-        return q_res
+        return out
 
     def postprocess(self, x: torch.Tensor, scale: tp.Optional[torch.Tensor] = None) -> torch.Tensor:
         if scale is not None:

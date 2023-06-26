@@ -38,11 +38,11 @@ def run(args):
     # model = Demucs(**args.demucs, sample_rate=args.sample_rate)
     encoder = m.SEANetEncoder(channels=1, dimension=args.dimension, norm='weight_norm', causal=True)
     decoder = m.SEANetDecoder(channels=1, dimension=args.dimension, norm='weight_norm', causal=True)
-    quantizer = qt.ResidualVectorQuantizer().to(args.device)
+    # quantizer = qt.ResidualVectorQuantizer().to(args.device)
     model = EncodecModel(
             encoder,
             decoder,
-            quantizer=quantizer,
+            # quantizer=quantizer,
             normalize=False,
             segment=None,
         ).to(args.device)

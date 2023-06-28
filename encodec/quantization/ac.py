@@ -15,9 +15,9 @@ import torch
 from ..binary import BitPacker, BitUnpacker
 
 
-def build_stable_quantized_cdf(pdf: torch.Tensor, total_range_bits: int,
-                               roundoff: float = 1e-8, min_range: int = 2,
-                               check: bool = True) -> torch.Tensor:
+def build_stable_quantized_cdf(
+    pdf: torch.Tensor, total_range_bits: int, roundoff: float = 1e-8, min_range: int = 2, check: bool = True
+) -> torch.Tensor:
     """Turn the given PDF into a quantized CDF that splits
     [0, 2 ** self.total_range_bits - 1] into chunks of size roughly proportional
     to the PDF.
@@ -118,8 +118,8 @@ class ArithmeticCoder:
             b1 = self.low >> self.max_bit
             b2 = self.high >> self.max_bit
             if b1 == b2:
-                self.low -= (b1 << self.max_bit)
-                self.high -= (b1 << self.max_bit)
+                self.low -= b1 << self.max_bit
+                self.high -= b1 << self.max_bit
                 assert self.high >= self.low, (self.high, self.low, self.max_bit)
                 assert self.low >= 0
                 self.max_bit -= 1
@@ -158,8 +158,7 @@ class ArithmeticCoder:
         return outs
 
     def flush(self):
-        """Flush the remaining information to the stream.
-        """
+        """Flush the remaining information to the stream."""
         while self.max_bit >= 0:
             b1 = (self.low >> self.max_bit) & 1
             self.packer.push(b1)
@@ -182,6 +181,7 @@ class ArithmeticDecoder:
     and we will need to read new bits from the stream and repeat the process.
 
     """
+
     def __init__(self, fo: tp.IO[bytes], total_range_bits: int = 24):
         self.total_range_bits = total_range_bits
         self.low: int = 0
@@ -205,9 +205,9 @@ class ArithmeticDecoder:
             b1 = self.low >> self.max_bit
             b2 = self.high >> self.max_bit
             if b1 == b2:
-                self.low -= (b1 << self.max_bit)
-                self.high -= (b1 << self.max_bit)
-                self.current -= (b1 << self.max_bit)
+                self.low -= b1 << self.max_bit
+                self.high -= b1 << self.max_bit
+                self.current -= b1 << self.max_bit
                 assert self.high >= self.low
                 assert self.low >= 0
                 self.max_bit -= 1

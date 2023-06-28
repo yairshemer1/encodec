@@ -25,6 +25,7 @@ def averager(beta: float = 1):
             total[key] = total[key] * beta + weight * float(value)
             fix[key] = fix[key] * beta + weight
         return {key: tot / fix[key] for key, tot in total.items()}
+
     return _update
 
 
@@ -64,9 +65,16 @@ class Balancer:
         monitor (bool): Whether to store additional ratio for each loss key in metrics.
     """
 
-    def __init__(self, weights: tp.Dict[str, float], rescale_grads: bool = True, total_norm: float = 1.,
-                 ema_decay: float = 0.999, per_batch_item: bool = True, epsilon: float = 1e-12,
-                 monitor: bool = False):
+    def __init__(
+        self,
+        weights: tp.Dict[str, float],
+        rescale_grads: bool = True,
+        total_norm: float = 1.0,
+        ema_decay: float = 0.999,
+        per_batch_item: bool = True,
+        epsilon: float = 1e-12,
+        monitor: bool = False,
+    ):
         self.weights = weights
         self.per_batch_item = per_batch_item
         self.total_norm = total_norm
@@ -84,7 +92,7 @@ class Balancer:
         norms = {}
         grads = {}
         for name, loss in losses.items():
-            grad, = autograd.grad(loss, [input], retain_graph=True)
+            (grad,) = autograd.grad(loss, [input], retain_graph=True)
             if self.per_batch_item:
                 dims = tuple(range(1, grad.dim()))
                 norm = grad.norm(dim=dims).mean()
@@ -102,7 +110,7 @@ class Balancer:
         self._metrics = {}
         if self.monitor:
             for k, v in avg_norms.items():
-                self._metrics[f'ratio_{k}'] = v / total
+                self._metrics[f"ratio_{k}"] = v / total
 
         total_weights = sum([self.weights[k] for k in avg_norms])
         ratios = {k: w / total_weights for k, w in self.weights.items()}
@@ -120,24 +128,25 @@ class Balancer:
 
 def test():
     from torch.nn import functional as F
+
     x = torch.zeros(1, requires_grad=True)
     one = torch.ones_like(x)
     loss_1 = F.l1_loss(x, one)
     loss_2 = 100 * F.l1_loss(x, -one)
-    losses = {'1': loss_1, '2': loss_2}
+    losses = {"1": loss_1, "2": loss_2}
 
-    balancer = Balancer(weights={'1': 1, '2': 1}, rescale_grads=False)
+    balancer = Balancer(weights={"1": 1, "2": 1}, rescale_grads=False)
     balancer.backward(losses, x)
-    assert torch.allclose(x.grad, torch.tensor(99.)), x.grad
+    assert torch.allclose(x.grad, torch.tensor(99.0)), x.grad
 
     loss_1 = F.l1_loss(x, one)
     loss_2 = 100 * F.l1_loss(x, -one)
-    losses = {'1': loss_1, '2': loss_2}
+    losses = {"1": loss_1, "2": loss_2}
     x.grad = None
-    balancer = Balancer(weights={'1': 1, '2': 1}, rescale_grads=True)
-    balancer.backward({'1': loss_1, '2': loss_2}, x)
-    assert torch.allclose(x.grad, torch.tensor(0.)), x.grad
+    balancer = Balancer(weights={"1": 1, "2": 1}, rescale_grads=True)
+    balancer.backward({"1": loss_1, "2": loss_2}, x)
+    assert torch.allclose(x.grad, torch.tensor(0.0)), x.grad
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     test()

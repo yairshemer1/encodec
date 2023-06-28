@@ -16,7 +16,7 @@ def hz_to_mel(f):
 
 
 def mel_to_hz(m):
-    return 700 * (10**(m / 2595) - 1)
+    return 700 * (10 ** (m / 2595) - 1)
 
 
 def mel_frequencies(n_mels, fmin, fmax):
@@ -48,7 +48,7 @@ def convert_audio_channels(wav, channels=2):
         wav = wav[..., :channels, :]
     else:
         # Case 4: What is a reasonable choice here?
-        raise ValueError('The audio file has less channels than requested but is not mono.')
+        raise ValueError("The audio file has less channels than requested but is not mono.")
     return wav
 
 

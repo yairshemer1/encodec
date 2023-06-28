@@ -17,7 +17,6 @@ import torchaudio
 
 from .audio import Audioset, find_audio_files
 from . import distrib, pretrained
-from .model import DemucsStreamer
 
 from .utils import LogProgress
 
@@ -29,29 +28,27 @@ def add_flags(parser):
     Add the flags for the argument parser that are related to model loading and evaluation"
     """
     pretrained.add_model_flags(parser)
-    parser.add_argument('--device', default="cpu")
-    parser.add_argument('--dry', type=float, default=0,
-                        help='dry/wet knob coefficient. 0 is only denoised, 1 only input signal.')
-    parser.add_argument('--num_workers', type=int, default=10)
-    parser.add_argument('--streaming', action="store_true",
-                        help="true streaming evaluation for Demucs")
+    parser.add_argument("--device", default="cpu")
+    parser.add_argument(
+        "--dry", type=float, default=0, help="dry/wet knob coefficient. 0 is only denoised, 1 only input signal."
+    )
+    parser.add_argument("--num_workers", type=int, default=10)
+    parser.add_argument("--streaming", action="store_true", help="true streaming evaluation for Demucs")
 
 
 parser = argparse.ArgumentParser(
-        'denoiser.enhance',
-        description="Speech enhancement using Demucs - Generate enhanced files")
+    "denoiser.enhance", description="Speech enhancement using Demucs - Generate enhanced files"
+)
 add_flags(parser)
-parser.add_argument("--out_dir", type=str, default="enhanced",
-                    help="directory putting enhanced wav files")
+parser.add_argument("--out_dir", type=str, default="enhanced", help="directory putting enhanced wav files")
 parser.add_argument("--batch_size", default=1, type=int, help="batch size")
-parser.add_argument('-v', '--verbose', action='store_const', const=logging.DEBUG,
-                    default=logging.INFO, help="more loggging")
+parser.add_argument(
+    "-v", "--verbose", action="store_const", const=logging.DEBUG, default=logging.INFO, help="more loggging"
+)
 
 group = parser.add_mutually_exclusive_group()
-group.add_argument("--noisy_dir", type=str, default=None,
-                   help="directory including noisy wav files")
-group.add_argument("--noisy_json", type=str, default=None,
-                   help="json file including noisy wav files")
+group.add_argument("--noisy_dir", type=str, default=None, help="directory including noisy wav files")
+group.add_argument("--noisy_json", type=str, default=None, help="json file including noisy wav files")
 
 
 def get_pred(model, y, args):
@@ -78,7 +75,7 @@ def write(wav, filename, sr=16_000):
 
 
 def get_dataset(args, sample_rate, channels):
-    if hasattr(args, 'dset'):
+    if hasattr(args, "dset"):
         paths = args.dset
     else:
         paths = args
@@ -88,12 +85,9 @@ def get_dataset(args, sample_rate, channels):
     elif paths.noisy_dir:
         files = find_audio_files(paths.noisy_dir)
     else:
-        logger.warning(
-            "Small sample set was not provided by either noisy_dir or noisy_json. "
-            "Skipping enhancement.")
+        logger.warning("Small sample set was not provided by either noisy_dir or noisy_json. " "Skipping enhancement.")
         return None
-    return Audioset(files, with_path=True,
-                    sample_rate=sample_rate, channels=channels, convert=True)
+    return Audioset(files, with_path=True, sample_rate=sample_rate, channels=channels, convert=True)
 
 
 def _estimate_and_save(model, noisy_signals, filenames, out_dir, args):
@@ -127,17 +121,15 @@ def enhance(args, model=None, local_out_dir=None):
             # Get batch data
             noisy_signals, filenames = data
             noisy_signals = noisy_signals.to(args.device)
-            if args.device == 'cpu' and args.num_workers > 1:
-                pendings.append(
-                    pool.submit(_estimate_and_save,
-                                model, noisy_signals, filenames, out_dir, args))
+            if args.device == "cpu" and args.num_workers > 1:
+                pendings.append(pool.submit(_estimate_and_save, model, noisy_signals, filenames, out_dir, args))
             else:
                 # Forward
                 estimate = get_pred(model, noisy_signals, args)
                 save_wavs(estimate, noisy_signals, filenames, out_dir, sr=model.sample_rate)
 
         if pendings:
-            print('Waiting for pending jobs...')
+            print("Waiting for pending jobs...")
             for pending in LogProgress(logger, pendings, updates=5, name="Generate enhanced files"):
                 pending.result()
 

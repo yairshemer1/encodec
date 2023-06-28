@@ -25,6 +25,7 @@ def capture_init(init):
     Decorate `__init__` with this, and you can then
     recover the *args and **kwargs passed to it in `self._init_args_kwargs`
     """
+
     @functools.wraps(init)
     def __init__(self, *args, **kwargs):
         self._init_args_kwargs = (args, kwargs)
@@ -34,27 +35,26 @@ def capture_init(init):
 
 
 def deserialize_model(package, strict=False):
-    """deserialize_model.
-
-    """
-    klass = package['class']
-    kwargs = package['kwargs']
-    if 'sample_rate' not in kwargs:
+    """deserialize_model."""
+    klass = package["class"]
+    kwargs = package["kwargs"]
+    if "sample_rate" not in kwargs:
         logger.warning(
             "Training sample rate not available!, 16kHz will be assumed. "
             "If you used a different sample rate at train time, please fix your checkpoint "
-            "with the command `./train.py [TRAINING_ARGS] save_again=true.")
+            "with the command `./train.py [TRAINING_ARGS] save_again=true."
+        )
     if strict:
-        model = klass(*package['args'], **kwargs)
+        model = klass(*package["args"], **kwargs)
     else:
         sig = inspect.signature(klass)
-        kw = package['kwargs']
+        kw = package["kwargs"]
         for key in list(kw):
             if key not in sig.parameters:
                 logger.warning("Dropping inexistant parameter %s", key)
                 del kw[key]
-        model = klass(*package['args'], **kw)
-    model.load_state_dict(package['state'])
+        model = klass(*package["args"], **kw)
+    model.load_state_dict(package["state"])
     return model
 
 
@@ -120,7 +120,7 @@ def _linear_overlap_add(frames: tp.List[torch.Tensor], stride: int):
     total_size = stride * (len(frames) - 1) + frames[-1].shape[-1]
 
     frame_length = frames[0].shape[-1]
-    t = torch.linspace(0, 1, frame_length + 2, device=device, dtype=dtype)[1: -1]
+    t = torch.linspace(0, 1, frame_length + 2, device=device, dtype=dtype)[1:-1]
     weight = 0.5 - (t - 0.5).abs()
 
     sum_weight = torch.zeros(total_size, device=device, dtype=dtype)
@@ -129,31 +129,30 @@ def _linear_overlap_add(frames: tp.List[torch.Tensor], stride: int):
 
     for frame in frames:
         frame_length = frame.shape[-1]
-        out[..., offset:offset + frame_length] += weight[:frame_length] * frame
-        sum_weight[offset:offset + frame_length] += weight[:frame_length]
+        out[..., offset : offset + frame_length] += weight[:frame_length] * frame
+        sum_weight[offset : offset + frame_length] += weight[:frame_length]
         offset += stride
     assert sum_weight.min() > 0
     return out / sum_weight
 
 
 def _get_checkpoint_url(root_url: str, checkpoint: str):
-    if not root_url.endswith('/'):
-        root_url += '/'
+    if not root_url.endswith("/"):
+        root_url += "/"
     return root_url + checkpoint
 
 
 def _check_checksum(path: Path, checksum: str):
     sha = sha256()
-    with open(path, 'rb') as file:
+    with open(path, "rb") as file:
         while True:
-            buf = file.read(2**20)
+            buf = file.read(2 ** 20)
             if not buf:
                 break
             sha.update(buf)
-    actual_checksum = sha.hexdigest()[:len(checksum)]
+    actual_checksum = sha.hexdigest()[: len(checksum)]
     if actual_checksum != checksum:
-        raise RuntimeError(f'Invalid checksum for file {path}, '
-                           f'expected {checksum} but got {actual_checksum}')
+        raise RuntimeError(f"Invalid checksum for file {path}, " f"expected {checksum} but got {actual_checksum}")
 
 
 def convert_audio(wav: torch.Tensor, sr: int, target_sr: int, target_channels: int):
@@ -172,15 +171,14 @@ def convert_audio(wav: torch.Tensor, sr: int, target_sr: int, target_channels: i
     return wav
 
 
-def save_audio(wav: torch.Tensor, path: tp.Union[Path, str],
-               sample_rate: int, rescale: bool = False):
+def save_audio(wav: torch.Tensor, path: tp.Union[Path, str], sample_rate: int, rescale: bool = False):
     limit = 0.99
     mx = wav.abs().max()
     if rescale:
         wav = wav * min(limit / mx, 1)
     else:
         wav = wav.clamp(-limit, limit)
-    torchaudio.save(str(path), wav, sample_rate=sample_rate, encoding='PCM_S', bits_per_sample=16)
+    torchaudio.save(str(path), wav, sample_rate=sample_rate, encoding="PCM_S", bits_per_sample=16)
 
 
 class LogProgress:
@@ -196,13 +194,8 @@ class LogProgress:
         - name (str): prefix to use in the log.
         - level: logging level (like `logging.INFO`).
     """
-    def __init__(self,
-                 logger,
-                 iterable,
-                 updates=5,
-                 total=None,
-                 name="LogProgress",
-                 level=logging.INFO):
+
+    def __init__(self, logger, iterable, updates=5, total=None, name="LogProgress", level=logging.INFO):
         self.iterable = iterable
         self.total = total or len(iterable)
         self.updates = updates
@@ -235,10 +228,10 @@ class LogProgress:
                 self._log()
 
     def _log(self):
-        end = (time.time() - self._begin)
+        end = time.time() - self._begin
         if end == 0:
             time.sleep(0.1)
-            end = (time.time() - self._begin)
+            end = time.time() - self._begin
         self._speed = (1 + self._index) / end
         infos = " | ".join(f"{k.capitalize()} {v}" for k, v in self._infos.items())
         if self._speed < 1e-4:

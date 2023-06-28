@@ -48,13 +48,14 @@ def init(args):
     torch.cuda.set_device(rank())
     torch.distributed.init_process_group(
         backend=args.ddp_backend,
-        init_method='file://' + os.path.abspath(args.rendezvous_file),
+        init_method="file://" + os.path.abspath(args.rendezvous_file),
         world_size=world_size(),
-        rank=rank())
+        rank=rank(),
+    )
     logger.debug("Distributed rendezvous went well, rank %d/%d", rank(), world_size())
 
 
-def average(metrics, count=1.):
+def average(metrics, count=1.0):
     """average.
 
     Average all the relevant metrices across processes
@@ -63,20 +64,20 @@ def average(metrics, count=1.):
     """
     if world_size() == 1:
         return metrics
-    tensor = torch.tensor(list(metrics) + [1], device='cuda', dtype=torch.float32)
+    tensor = torch.tensor(list(metrics) + [1], device="cuda", dtype=torch.float32)
     tensor *= count
     torch.distributed.all_reduce(tensor, op=torch.distributed.ReduceOp.SUM)
     return (tensor[:-1] / tensor[-1]).cpu().numpy().tolist()
 
 
-def average_metrics(metrics: tp.Dict[str, float], count=1.):
+def average_metrics(metrics: tp.Dict[str, float], count=1.0):
     """Average a dictionary of metrics across all workers, using the optional
     `count` as unnormalized weight.
     """
     if not is_distributed():
         return metrics
     keys, values = zip(*metrics.items())
-    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    device = "cuda" if torch.cuda.is_available() else "cpu"
     tensor = torch.tensor(list(values) + [1], device=device, dtype=torch.float32)
     tensor *= count
     all_reduce(tensor)
@@ -98,9 +99,8 @@ def wrap(model):
         return model
     else:
         return DistributedDataParallel(
-            model,
-            device_ids=[torch.cuda.current_device()],
-            output_device=torch.cuda.current_device())
+            model, device_ids=[torch.cuda.current_device()], output_device=torch.cuda.current_device()
+        )
 
 
 def barrier():
@@ -149,8 +149,9 @@ def _check_number_of_params(params: tp.List[torch.Tensor]):
     if tensor.item() != len(params) * world_size():
         # If not all the workers have the same number, for at least one of them,
         # this inequality will be verified.
-        raise RuntimeError(f"Mismatch in number of params: ours is {len(params)}, "
-                           "at least one worker has a different one.")
+        raise RuntimeError(
+            f"Mismatch in number of params: ours is {len(params)}, " "at least one worker has a different one."
+        )
 
 
 def broadcast_tensors(tensors: tp.Iterable[torch.Tensor], src: int = 0):
@@ -179,11 +180,9 @@ def sync_buffer(buffers, average=True):
     for buffer in buffers:
         if torch.is_floating_point(buffer.data):
             if average:
-                handle = torch.distributed.all_reduce(
-                    buffer.data, op=torch.distributed.ReduceOp.SUM, async_op=True)
+                handle = torch.distributed.all_reduce(buffer.data, op=torch.distributed.ReduceOp.SUM, async_op=True)
             else:
-                handle = torch.distributed.broadcast(
-                    buffer.data, src=0, async_op=True)
+                handle = torch.distributed.broadcast(buffer.data, src=0, async_op=True)
             handles.append((buffer, handle))
     for buffer, handle in handles:
         handle.wait()
@@ -202,8 +201,7 @@ def sync_grad(params):
     handles = []
     for p in params:
         if p.grad is not None:
-            handle = torch.distributed.all_reduce(
-                p.grad.data, op=torch.distributed.ReduceOp.SUM, async_op=True)
+            handle = torch.distributed.all_reduce(p.grad.data, op=torch.distributed.ReduceOp.SUM, async_op=True)
             handles.append((p, handle))
     for p, handle in handles:
         handle.wait()

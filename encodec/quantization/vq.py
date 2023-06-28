@@ -39,6 +39,7 @@ class ResidualVectorQuantizer(nn.Module):
             that have an exponential moving average cluster size less than the specified threshold with
             randomly selected vector from the current batch.
     """
+
     @capture_init
     def __init__(
         self,
@@ -86,11 +87,10 @@ class ResidualVectorQuantizer(nn.Module):
         return QuantizedResult(quantized, codes, bw, penalty=torch.mean(commit_loss))
 
     def get_num_quantizers_for_bandwidth(self, frame_rate: int, bandwidth: tp.Optional[float] = None) -> int:
-        """Return n_q based on specified target bandwidth.
-        """
+        """Return n_q based on specified target bandwidth."""
         bw_per_q = self.get_bandwidth_per_quantizer(frame_rate)
         n_q = self.n_q
-        if bandwidth and bandwidth > 0.:
+        if bandwidth and bandwidth > 0.0:
             # bandwidth is represented as a thousandth of what it is, e.g. 6kbps bandwidth is represented as
             # bandwidth == 6.0
             n_q = int(max(1, math.floor(bandwidth * 1000 / bw_per_q)))
@@ -112,7 +112,6 @@ class ResidualVectorQuantizer(nn.Module):
         return codes
 
     def decode(self, codes: torch.Tensor) -> torch.Tensor:
-        """Decode the given codes to the quantized representation.
-        """
+        """Decode the given codes to the quantized representation."""
         quantized = self.vq.decode(codes)
         return quantized

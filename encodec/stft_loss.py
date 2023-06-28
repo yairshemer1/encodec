@@ -20,11 +20,9 @@ class MelLoss(torch.nn.Module):
     def __init__(self, fft_size=1024, hop_length=120, win_length=600, n_mels=64, normalized=True):
         """Initialize Mel loss module."""
         super(MelLoss, self).__init__()
-        self.mel_transform = torchaudio.transforms.MelSpectrogram(n_fft=fft_size,
-                                                                  hop_length=hop_length,
-                                                                  win_length=win_length,
-                                                                  n_mels=n_mels,
-                                                                  normalized=normalized)
+        self.mel_transform = torchaudio.transforms.MelSpectrogram(
+            n_fft=fft_size, hop_length=hop_length, win_length=win_length, n_mels=n_mels, normalized=normalized
+        )
 
         self.l1_loss = torch.nn.L1Loss()
         self.l2_loss = torch.nn.MSELoss()
@@ -47,8 +45,7 @@ class MelLoss(torch.nn.Module):
 class MultiResolutionMelLoss(torch.nn.Module):
     """Multi resolution Mel loss module."""
 
-    def __init__(self,
-                 scales=[5, 6, 7, 8, 9, 10, 11]):
+    def __init__(self, scales=[5, 6, 7, 8, 9, 10, 11]):
         """Initialize Multi resolution Mel loss module.
         Args:
             scales (list): List of scales of spectrogram.

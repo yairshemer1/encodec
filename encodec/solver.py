@@ -29,16 +29,15 @@ logger = logging.getLogger(__name__)
 
 class Solver(object):
     def __init__(self, data, model, msd, optimizer_gen, optimizer_disc, args):
-        self.tr_loader = data['tr_loader']
-        self.cv_loader = data['cv_loader']
-        self.tt_loader = data['tt_loader']
+        self.tr_loader = data["tr_loader"]
+        self.cv_loader = data["cv_loader"]
+        self.tt_loader = data["tt_loader"]
         self.model = model
         self.msd = msd
         self.dmodel = distrib.wrap(model)
-        self.balancer = Balancer(weights={"l_t": args.l_t_wave,
-                                          "l_f": args.l_f_mel,
-                                          "l_feat": args.l_feat_features,
-                                          "l_g": args.l_g_gen})
+        self.balancer = Balancer(
+            weights={"l_t": args.l_t_wave, "l_f": args.l_f_mel, "l_feat": args.l_feat_features, "l_g": args.l_g_gen}
+        )
         self.optimizer_gen = optimizer_gen
         self.optimizer_disc = optimizer_disc
         self.scheduler_gen = torch.optim.lr_scheduler.ExponentialLR(optimizer_gen, gamma=args.lr_decay, last_epoch=-1)
@@ -69,15 +68,15 @@ class Solver(object):
 
     def _serialize(self):
         package = {}
-        package['model'] = serialize_model(self.model)
-        package['msd'] = serialize_model(self.msd)
-        package['optimizer_gen'] = self.optimizer_gen.state_dict()
-        package['optimizer_disc'] = self.optimizer_disc.state_dict()
-        package['scheduler_gen'] = self.scheduler_gen.state_dict()
-        package['scheduler_disc'] = self.scheduler_disc.state_dict()
-        package['history'] = self.history
-        package['best_state'] = self.best_state
-        package['args'] = self.args
+        package["model"] = serialize_model(self.model)
+        package["msd"] = serialize_model(self.msd)
+        package["optimizer_gen"] = self.optimizer_gen.state_dict()
+        package["optimizer_disc"] = self.optimizer_disc.state_dict()
+        package["scheduler_gen"] = self.scheduler_gen.state_dict()
+        package["scheduler_disc"] = self.scheduler_disc.state_dict()
+        package["history"] = self.history
+        package["best_state"] = self.best_state
+        package["args"] = self.args
         tmp_path = str(self.checkpoint_file) + ".tmp"
         torch.save(package, tmp_path)
         # renaming is sort of atomic on UNIX (not really true on NFS)
@@ -85,8 +84,8 @@ class Solver(object):
         os.rename(tmp_path, self.checkpoint_file)
 
         # Saving only the latest best model.
-        model = package['model']
-        model['state'] = self.best_state
+        model = package["model"]
+        model["state"] = self.best_state
         tmp_path = str(self.best_file) + ".tmp"
         torch.save(model, tmp_path)
         os.rename(tmp_path, self.best_file)
@@ -105,22 +104,22 @@ class Solver(object):
             keep_history = False
 
         if load_from:
-            logger.info(f'Loading checkpoint model: {load_from}')
-            package = torch.load(load_from, 'cpu')
+            logger.info(f"Loading checkpoint model: {load_from}")
+            package = torch.load(load_from, "cpu")
             if load_best:
-                self.msd.load_state_dict(package['msd'])
-                self.model.load_state_dict(package['best_state'])
+                self.msd.load_state_dict(package["msd"])
+                self.model.load_state_dict(package["best_state"])
             else:
-                self.msd.load_state_dict(package['msd']['state'])
-                self.model.load_state_dict(package['model']['state'])
-            if 'optimizer_gen' in package and 'optimizer_disc' in package and not load_best:
-                self.optimizer_gen.load_state_dict(package['optimizer_gen'])
-                self.optimizer_disc.load_state_dict(package['optimizer_disc'])
-                self.scheduler_gen.load_state_dict(package['scheduler_gen'])
-                self.scheduler_disc.load_state_dict(package['scheduler_disc'])
+                self.msd.load_state_dict(package["msd"]["state"])
+                self.model.load_state_dict(package["model"]["state"])
+            if "optimizer_gen" in package and "optimizer_disc" in package and not load_best:
+                self.optimizer_gen.load_state_dict(package["optimizer_gen"])
+                self.optimizer_disc.load_state_dict(package["optimizer_disc"])
+                self.scheduler_gen.load_state_dict(package["scheduler_gen"])
+                self.scheduler_disc.load_state_dict(package["scheduler_disc"])
             if keep_history:
-                self.history = package['history']
-            self.best_state = package['best_state']
+                self.history = package["history"]
+            self.best_state = package["best_state"]
         continue_pretrained = self.args.continue_pretrained
         if continue_pretrained:
             logger.info("Fine tuning from pre-trained model %s", continue_pretrained)
@@ -143,32 +142,43 @@ class Solver(object):
             self.model.train()
             self.msd.train()
             start = time.time()
-            logger.info('-' * 70)
+            logger.info("-" * 70)
             logger.info("Training...")
             losses_record, train_loss = self._run_one_epoch(epoch)
             logger.info(
-                bold(f'Train Summary | End of Epoch {epoch + 1} | '
-                     f'Time {time.time() - start:.2f}s | Train Loss {train_loss:.5f}'))
+                bold(
+                    f"Train Summary | End of Epoch {epoch + 1} | "
+                    f"Time {time.time() - start:.2f}s | Train Loss {train_loss:.5f}"
+                )
+            )
 
             if self.cv_loader:
                 # Cross validation
-                logger.info('-' * 70)
-                logger.info('Cross validation...')
+                logger.info("-" * 70)
+                logger.info("Cross validation...")
                 self.model.eval()
                 with torch.no_grad():
                     losses_record, valid_loss = self._run_one_epoch(epoch, cross_valid=True)
                 logger.info(
-                    bold(f'Valid Summary | End of Epoch {epoch + 1} | '
-                         f'Time {time.time() - start:.2f}s | Valid Loss {valid_loss:.5f}'))
+                    bold(
+                        f"Valid Summary | End of Epoch {epoch + 1} | "
+                        f"Time {time.time() - start:.2f}s | Valid Loss {valid_loss:.5f}"
+                    )
+                )
             else:
                 valid_loss = 0
 
-            best_loss = min(pull_metric(self.history, 'valid') + [valid_loss])
-            metrics = {'train': train_loss, 'valid': valid_loss, 'best': best_loss,
-                       'lr_gen': self.scheduler_gen.get_last_lr()[0], 'lr_disc': self.scheduler_disc.get_last_lr()[0]}
+            best_loss = min(pull_metric(self.history, "valid") + [valid_loss])
+            metrics = {
+                "train": train_loss,
+                "valid": valid_loss,
+                "best": best_loss,
+                "lr_gen": self.scheduler_gen.get_last_lr()[0],
+                "lr_disc": self.scheduler_disc.get_last_lr()[0],
+            }
             # Save the best model
             if valid_loss == best_loss:
-                logger.info(bold('New best valid loss %.4f'), valid_loss)
+                logger.info(bold("New best valid loss %.4f"), valid_loss)
                 self.best_state = copy_state(self.model.state_dict())
 
             # evaluate and enhance samples every 'eval_every' argument number of epochs
@@ -176,8 +186,8 @@ class Solver(object):
             self.tt_loader.epoch = epoch
             if ((epoch + 1) % self.eval_every == 0 or epoch == self.epochs - 1) and self.tt_loader:
                 # Evaluate on the testset
-                logger.info('-' * 70)
-                logger.info('Evaluating on the test set...')
+                logger.info("-" * 70)
+                logger.info("Evaluating on the test set...")
                 # We switch to the best known model for testing
                 with swap_state(self.model, self.best_state):
                     evaluate(args=self.args, model=self.model, data_loader=self.tt_loader)
@@ -188,7 +198,7 @@ class Solver(object):
                 wandb.log(metrics, step=epoch)
             self.history.append(metrics)
             info = " | ".join(f"{k.capitalize()} {v:.05g}" for k, v in metrics.items())
-            logger.info('-' * 70)
+            logger.info("-" * 70)
             logger.info(bold(f"Overall Summary | Epoch {epoch + 1} | {info}"))
 
             if distrib.rank() == 0:
@@ -225,8 +235,12 @@ class Solver(object):
             # apply a loss function after each layer
             with torch.autograd.set_detect_anomaly(True):
                 y_pred_detach = torch.clone(y_pred).detach()
-                losses_record = self.disc_step(y=y, y_pred=y_pred_detach, cross_valid=cross_valid, losses_record=losses_record)
-                losses_record = self.generator_step(y=y, y_pred=y_pred, cross_valid=cross_valid, losses_record=losses_record)
+                losses_record = self.disc_step(
+                    y=y, y_pred=y_pred_detach, cross_valid=cross_valid, losses_record=losses_record
+                )
+                losses_record = self.generator_step(
+                    y=y, y_pred=y_pred, cross_valid=cross_valid, losses_record=losses_record
+                )
 
             logprog.update(loss=format(total_loss / (i + 1), ".5f"))
 
@@ -244,10 +258,7 @@ class Solver(object):
 
         l_g, l_feat = total_gen_loss(fmap_real=fmap_r, logits_fake=logits_g, fmap_fake=fmap_g, device=self.device)
 
-        losses = {"l_t": l_t,
-                  "l_f": l_f,
-                  "l_feat": l_feat,
-                  "l_g": l_g}
+        losses = {"l_t": l_t, "l_f": l_f, "l_feat": l_feat, "l_g": l_g}
 
         losses_record[f"{is_train}_l_f"].append(l_f.item())
         losses_record[f"{is_train}_l_t"].append(l_t.item())

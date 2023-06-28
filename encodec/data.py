@@ -26,7 +26,7 @@ def match_dns(noisy, clean):
     noisydict = {}
     extra_noisy = []
     for path, size in noisy:
-        match = re.search(r'fileid_(\d+)\.wav$', path)
+        match = re.search(r"fileid_(\d+)\.wav$", path)
         if match is None:
             # maybe we are mixing some other dataset in
             extra_noisy.append((path, size))
@@ -37,7 +37,7 @@ def match_dns(noisy, clean):
     copied = list(clean)
     clean[:] = []
     for path, size in copied:
-        match = re.search(r'fileid_(\d+)\.wav$', path)
+        match = re.search(r"fileid_(\d+)\.wav$", path)
         if match is None:
             extra_clean.append((path, size))
         else:
@@ -67,8 +67,7 @@ def match_files(noisy, clean, matching="sort"):
 
 
 class CleanSet:
-    def __init__(self, json_dir, matching="sort", length=None, stride=None,
-                 pad=True, sample_rate=None, convert=None):
+    def __init__(self, json_dir, matching="sort", length=None, stride=None, pad=True, sample_rate=None, convert=None):
         """__init__.
 
         :param json_dir: directory containing both clean.json and noisy.json
@@ -78,11 +77,11 @@ class CleanSet:
         :param pad: pad the end of the sequence with zeros
         :param sample_rate: the signals sampling rate
         """
-        clean_json = os.path.join(json_dir, 'clean.json')
-        with open(clean_json, 'r') as f:
+        clean_json = os.path.join(json_dir, "clean.json")
+        with open(clean_json, "r") as f:
             clean = json.load(f)
 
-        kw = {'length': length, 'stride': stride, 'pad': pad, 'sample_rate': sample_rate, 'convert': convert}
+        kw = {"length": length, "stride": stride, "pad": pad, "sample_rate": sample_rate, "convert": convert}
         self.clean_set = Audioset(clean, **kw)
 
     def __getitem__(self, index):

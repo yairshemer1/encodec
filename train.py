@@ -13,6 +13,7 @@ import hydra
 from encodec import quantization as qt
 from encodec.executor import start_ddp_workers
 from encodec.model import MultiScaleDiscriminator
+
 # from encodec.hifi_gan_model import MultiScaleDiscriminator, MultiPeriodDiscriminator
 logger = logging.getLogger(__name__)
 
@@ -25,6 +26,7 @@ def run(args):
     from encodec.model import EncodecModel
     from encodec.solver import Solver
     import encodec.modules as m
+
     distrib.init(args)
 
     # init WandB
@@ -36,24 +38,24 @@ def run(args):
     torch.manual_seed(args.seed)
 
     # model = Demucs(**args.demucs, sample_rate=args.sample_rate)
-    encoder = m.SEANetEncoder(channels=1, dimension=args.dimension, norm='weight_norm', causal=True)
-    decoder = m.SEANetDecoder(channels=1, dimension=args.dimension, norm='weight_norm', causal=True)
+    encoder = m.SEANetEncoder(channels=1, dimension=args.dimension, norm="weight_norm", causal=True)
+    decoder = m.SEANetDecoder(channels=1, dimension=args.dimension, norm="weight_norm", causal=True)
     # quantizer = qt.ResidualVectorQuantizer().to(args.device)
     model = EncodecModel(
-            encoder,
-            decoder,
-            # quantizer=quantizer,
-            normalize=False,
-            segment=None,
-        ).to(args.device)
+        encoder,
+        decoder,
+        # quantizer=quantizer,
+        normalize=False,
+        segment=None,
+    ).to(args.device)
     msd = MultiScaleDiscriminator(filters=32).to(args.device)
     if args.show:
         logger.info(model)
-        mb = sum(p.numel() for p in model.parameters()) * 4 / 2**20
-        logger.info('Size: %.1f MB', mb)
-        if hasattr(model, 'valid_length'):
+        mb = sum(p.numel() for p in model.parameters()) * 4 / 2 ** 20
+        logger.info("Size: %.1f MB", mb)
+        if hasattr(model, "valid_length"):
             field = model.valid_length(1)
-            logger.info('Field: %.1f ms', field / args.sample_rate * 1000)
+            logger.info("Field: %.1f ms", field / args.sample_rate * 1000)
         return
 
     assert args.batch_size % distrib.world_size() == 0
@@ -62,14 +64,12 @@ def run(args):
     length = int(args.segment * args.sample_rate)
     stride = int(args.stride * args.sample_rate)
     # Demucs requires a specific number of samples to avoid 0 padding during training
-    if hasattr(model, 'valid_length'):
+    if hasattr(model, "valid_length"):
         length = model.valid_length(length)
     kwargs = {"matching": args.dset.matching, "sample_rate": args.sample_rate, "convert": args.convert}
     # Building datasets and loaders
-    tr_dataset = CleanSet(
-        args.dset.train, length=length, stride=stride, pad=args.pad, **kwargs)
-    tr_loader = distrib.loader(
-        tr_dataset, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers)
+    tr_dataset = CleanSet(args.dset.train, length=length, stride=stride, pad=args.pad, **kwargs)
+    tr_loader = distrib.loader(tr_dataset, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers)
     if args.dset.valid:
         cv_dataset = CleanSet(args.dset.valid, **kwargs)
         cv_loader = distrib.loader(cv_dataset, batch_size=1, num_workers=args.num_workers)
@@ -90,12 +90,9 @@ def run(args):
     optimizer_disc = torch.optim.Adam(msd.parameters(), lr=args.lr_disc, betas=(args.beta1, args.beta2))
 
     # Construct Solver
-    solver = Solver(data=data,
-                    model=model,
-                    msd=msd,
-                    optimizer_gen=optimizer_gen,
-                    optimizer_disc=optimizer_disc,
-                    args=args)
+    solver = Solver(
+        data=data, model=model, msd=msd, optimizer_gen=optimizer_gen, optimizer_disc=optimizer_disc, args=args
+    )
     solver.train()
     if args.wandb:
         wandb.finish()

@@ -5,5 +5,5 @@
 # LICENSE file in the root directory of this source tree.
 # author: adefossez
 
-dependencies = ['torch']
+dependencies = ["torch"]
 from denoiser.pretrained import dns48, dns64, master64  # noqa

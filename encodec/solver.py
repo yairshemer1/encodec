@@ -20,7 +20,7 @@ import torch.nn.functional as F
 from . import augment, distrib, pretrained
 from .balancer import Balancer
 from .evaluate import evaluate
-from .model import discriminator_loss, feature_loss, generator_loss
+from .model import discriminator_loss, feature_loss, generator_loss, total_gen_loss
 from .stft_loss import MultiResolutionMelLoss
 from .utils import bold, copy_state, pull_metric, serialize_model, swap_state, LogProgress
 
@@ -35,11 +35,10 @@ class Solver(object):
         self.model = model
         self.msd = msd
         self.dmodel = distrib.wrap(model)
-        self.balancer = Balancer(weights={"l_t_wave": args.l_t_wave,
-                                          "l_f_mel": args.l_f_mel,
-                                          "l_feat_features": args.l_feat_features,
-                                          "l_g_gen": args.l_g_gen,
-                                          "l_w_commit": args.l_w_commit,})
+        self.balancer = Balancer(weights={"l_t": args.l_t_wave,
+                                          "l_f": args.l_f_mel,
+                                          "l_feat": args.l_feat_features,
+                                          "l_g": args.l_g_gen})
         self.optimizer_gen = optimizer_gen
         self.optimizer_disc = optimizer_disc
         self.scheduler_gen = torch.optim.lr_scheduler.ExponentialLR(optimizer_gen, gamma=args.lr_decay, last_epoch=-1)
@@ -235,24 +234,25 @@ class Solver(object):
         return losses_record, train_loss
 
     def generator_step(self, y, y_pred, losses_record, cross_valid=False):
+        is_train = "train" if not cross_valid else "valid"
         # init zero loss, add penalty of commit_loss and backward
-        mel_loss, l1_mel_loss, l2_mel_loss = self.multi_res_mel_loss(y_pred.squeeze(1), y.squeeze(1))
-        wav_loss = F.l1_loss(y_pred, y)
+        l_f, l1_mel_loss, l2_mel_loss = self.multi_res_mel_loss(y_pred.squeeze(1), y.squeeze(1))
+        l_t = F.l1_loss(y_pred, y)
 
-        y_ds_hat_r, y_ds_hat_g, fmap_s_r, fmap_s_g = self.msd(y, y_pred)
-        loss_fm_s = feature_loss(fmap_s_r, fmap_s_g)
+        logits_r, fmap_r = self.msd(y)
+        logits_g, fmap_g = self.msd(y_pred)
 
-        loss_gen_s = generator_loss(y_ds_hat_g)
+        l_g, l_feat = total_gen_loss(fmap_real=fmap_r, logits_fake=logits_g, fmap_fake=fmap_g, device=self.device)
 
-        losses = {"l_t_wave": wav_loss,
-                  "l_f_mel": mel_loss,
-                  "l_feat_features": loss_fm_s,
-                  "l_g_gen": loss_gen_s}
+        losses = {"l_t": l_t,
+                  "l_f": l_f,
+                  "l_feat": l_feat,
+                  "l_g": l_g}
 
-        losses_record["Mel loss"].append(mel_loss.item())
-        losses_record["Wave loss"].append(wav_loss.item())
-        losses_record["Feature loss"].append(loss_fm_s.item())
-        losses_record["Generator loss"].append(loss_gen_s.item())
+        losses_record[f"{is_train}_l_f"].append(l_f.item())
+        losses_record[f"{is_train}_l_t"].append(l_t.item())
+        losses_record[f"{is_train}_l_feat"].append(l_feat.item())
+        losses_record[f"{is_train}_l_g"].append(l_g.item())
 
         if not cross_valid:
             self.optimizer_gen.zero_grad()
@@ -262,8 +262,10 @@ class Solver(object):
         return losses_record
 
     def disc_step(self, y, y_pred, losses_record, cross_valid=False):
-        y_ds_hat_r, y_ds_hat_g, _, _ = self.msd(y, y_pred)
-        loss_disc_s, losses_disc_s_r, losses_disc_s_g = discriminator_loss(y_ds_hat_r, y_ds_hat_g)
+        is_train = "train" if not cross_valid else "valid"
+        logits_r, fmaps_r = self.msd(y)
+        logits_g, fmaps_g = self.msd(y_pred)
+        loss_disc_s, losses_disc_s_r, losses_disc_s_g = discriminator_loss(logits_r, logits_g)
         loss_disc_s *= self.args.l_d_disc
 
         if not cross_valid:
@@ -273,6 +275,6 @@ class Solver(object):
                 loss_disc_s.backward()
                 self.optimizer_disc.step()
 
-        losses_record["Discriminator loss"].append(loss_disc_s.item())
+        losses_record[f"{is_train}_l_d"].append(loss_disc_s.item())
 
         return losses_record

@@ -7,25 +7,28 @@
 
 import math
 import time
+import typing as tp
 
+import numpy as np
 import torch
 import torchaudio
 from einops import rearrange
 from torch import nn
 from torch.nn import functional as F
-import typing as tp
-import numpy as np
 
 from encodec.modules import NormConv2d
-from .resample import downsample2, upsample2
-from .utils import capture_init
-from . import quantization as qt
 from . import modules as m
-from .utils import _check_checksum, _linear_overlap_add, _get_checkpoint_url
+from . import quantization as qt
+from .resample import downsample2, upsample2
+from .utils import _linear_overlap_add, _get_checkpoint_url
+from .utils import capture_init
 
 EncodedFrame = tp.Tuple[torch.Tensor, tp.Optional[torch.Tensor]]
 
 ROOT_URL = 'https://dl.fbaipublicfiles.com/encodec/v0/'
+FeatureMapType = tp.List[torch.Tensor]
+LogitsType = torch.Tensor
+DiscriminatorOutput = tp.Tuple[tp.List[LogitsType], tp.List[FeatureMapType]]
 
 
 def get_2d_padding(kernel_size: tp.Tuple[int, int], dilation: tp.Tuple[int, int] = (1, 1)):
@@ -726,18 +729,17 @@ class DiscriminatorS(torch.nn.Module):
                                     padding=get_2d_padding((kernel_size[0], kernel_size[0])),
                                     norm=norm)
 
-    def forward(self, x):
-        x_spec = self.spec_transform(x)
-        x = torch.cat([x_spec.real, x_spec.imag], dim=1)
-        x = rearrange(x, 'b c w t -> b c t w')
-
+    def forward(self, x: torch.Tensor):
         fmap = []
-        for l in self.convs:
-            x = l(x)
-            x = F.leaky_relu(x, 0.1)
-            fmap.append(x)
-        x = torch.flatten(x, 1, -1)
-        return x, fmap
+        z = self.spec_transform(x)  # [B, 2, Freq, Frames, 2]
+        z = torch.cat([z.real, z.imag], dim=1)
+        z = rearrange(z, 'b c w t -> b c t w')
+        for i, layer in enumerate(self.convs):
+            z = layer(z)
+            z = self.activation(z)
+            fmap.append(z)
+        z = self.conv_post(z)
+        return z, fmap
 
 
 class MultiScaleDiscriminator(torch.nn.Module):
@@ -753,20 +755,14 @@ class MultiScaleDiscriminator(torch.nn.Module):
             for i in range(len(n_ffts))
         ])
 
-    def forward(self, y, y_hat):
-        y_d_rs = []
-        y_d_gs = []
-        fmap_rs = []
-        fmap_gs = []
-        for i, d in enumerate(self.discriminators):
-            y_d_r, fmap_r = d(y)
-            y_d_g, fmap_g = d(y_hat)
-            y_d_rs.append(y_d_r)
-            fmap_rs.append(fmap_r)
-            y_d_gs.append(y_d_g)
-            fmap_gs.append(fmap_g)
-
-        return y_d_rs, y_d_gs, fmap_rs, fmap_gs
+    def forward(self, x: torch.Tensor) -> DiscriminatorOutput:
+        logits = []
+        fmaps = []
+        for disc in self.discriminators:
+            logit, fmap = disc(x)
+            logits.append(logit)
+            fmaps.append(fmap)
+        return logits, fmaps
 
 
 def feature_loss(fmap_r, fmap_g):
@@ -801,6 +797,27 @@ def generator_loss(disc_outputs):
         loss += l
 
     return loss
+
+
+def total_gen_loss(fmap_real, logits_fake, fmap_fake, device='cuda'):
+    relu = torch.nn.ReLU()
+    l1Loss = torch.nn.L1Loss(reduction='mean')
+    l_g = torch.tensor([0.0], device=device, requires_grad=True)
+    l_feat = torch.tensor([0.0], device=device, requires_grad=True)
+
+    # generator loss and feat loss, D_k(\hat x) = logits_fake[k], D_k^l(x) = fmap_real[k][l], D_k^l(\hat x) = fmap_fake[k][l]
+    for tt1 in range(len(fmap_real)):
+        l_g = l_g + torch.mean(relu(1 - logits_fake[tt1])) / len(logits_fake)
+        for tt2 in range(len(fmap_real[tt1])):
+            l_feat = l_feat + l1Loss(fmap_real[tt1][tt2], fmap_fake[tt1][tt2]) / torch.mean(torch.abs(fmap_real[tt1][tt2]))
+
+    KL_scale = len(fmap_real) * len(fmap_real[0])
+    K_scale = len(fmap_real)
+
+    l_g = 3 * l_g / K_scale
+    l_feat = 3 * l_feat / KL_scale
+
+    return l_g, l_feat
 
 
 def test():

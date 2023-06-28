@@ -144,7 +144,8 @@ class Solver(object):
             start = time.time()
             logger.info("-" * 70)
             logger.info("Training...")
-            losses_record, train_loss = self._run_one_epoch(epoch)
+            losses_record = defaultdict(list)
+            losses_record, train_loss = self._run_one_epoch(epoch, losses_record=losses_record)
             logger.info(
                 bold(
                     f"Train Summary | End of Epoch {epoch + 1} | "
@@ -158,7 +159,7 @@ class Solver(object):
                 logger.info("Cross validation...")
                 self.model.eval()
                 with torch.no_grad():
-                    losses_record, valid_loss = self._run_one_epoch(epoch, cross_valid=True)
+                    losses_record, valid_loss = self._run_one_epoch(epoch, losses_record=losses_record, cross_valid=True)
                 logger.info(
                     bold(
                         f"Valid Summary | End of Epoch {epoch + 1} | "
@@ -211,7 +212,7 @@ class Solver(object):
             self.scheduler_disc.step()
             self.scheduler_gen.step()
 
-    def _run_one_epoch(self, epoch, cross_valid=False):
+    def _run_one_epoch(self, epoch, losses_record, cross_valid=False):
         total_loss = 0
         data_loader = self.tr_loader if not cross_valid else self.cv_loader
 
@@ -219,7 +220,6 @@ class Solver(object):
         label = ["Train", "Valid"][cross_valid]
         name = label + f" | Epoch {epoch + 1}"
         logprog = LogProgress(logger, data_loader, updates=self.num_prints, name=name)
-        losses_record = defaultdict(list)
         for i, data in enumerate(logprog):
             y = data.to(self.device)
             y_pred = self.dmodel(y)

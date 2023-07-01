@@ -65,11 +65,11 @@ disc_step_prob: 0.6667
 dimension: 256
 
 # Loss function factors
-l_t_wave: 0.1
-l_f_mel: 1
-l_g_gen: 3
-l_d_disc: 1
-l_feat_features: 3
+l_t: 0.1
+l_f: 1
+l_g: 3
+l_d: 1
+l_feat: 3
 l_w_commit: 1
 
 # Experiment launching, distributed

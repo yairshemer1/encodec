@@ -36,7 +36,7 @@ class Solver(object):
         self.msd = msd
         self.dmodel = distrib.wrap(model)
         self.balancer = Balancer(
-            weights={"l_t": args.l_t_wave, "l_f": args.l_f_mel, "l_feat": args.l_feat_features, "l_g": args.l_g_gen}
+            weights={"l_t": args.l_t, "l_f": args.l_f, "l_feat": args.l_feat, "l_g": args.l_g}
         )
         self.optimizer_gen = optimizer_gen
         self.optimizer_disc = optimizer_disc
@@ -277,7 +277,7 @@ class Solver(object):
         logits_r, fmaps_r = self.msd(y)
         logits_g, fmaps_g = self.msd(y_pred)
         loss_disc_s, losses_disc_s_r, losses_disc_s_g = discriminator_loss(logits_r, logits_g)
-        loss_disc_s *= self.args.l_d_disc
+        loss_disc_s *= self.args.l_d
 
         if not cross_valid:
             prob = random.random()

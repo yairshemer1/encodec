@@ -96,12 +96,13 @@ class Solver(object):
         load_best = False
         keep_history = True
         # Reset
-        if self.checkpoint and self.checkpoint_file.exists() and not self.restart:
-            load_from = self.checkpoint_file
-        elif self.continue_from:
+        if self.continue_from:
             load_from = self.continue_from
             load_best = self.args.continue_best
             keep_history = False
+
+        elif self.checkpoint and self.checkpoint_file.exists() and not self.restart:
+            load_from = self.checkpoint_file
 
         if load_from:
             logger.info(f"Loading checkpoint model: {load_from}")
@@ -190,8 +191,8 @@ class Solver(object):
                 logger.info("-" * 70)
                 logger.info("Evaluating on the test set...")
                 # We switch to the best known model for testing
-                with swap_state(self.model, self.best_state):
-                    evaluate(args=self.args, model=self.model, data_loader=self.tt_loader)
+                evaluate(args=self.args, model=self.model, data_loader=self.tr_loader, dset_name="train")
+                evaluate(args=self.args, model=self.model, data_loader=self.tt_loader)
 
             if self.args.wandb:
                 for loss in losses_record:

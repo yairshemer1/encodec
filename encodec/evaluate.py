@@ -29,7 +29,7 @@ parser.add_argument(
 )
 
 
-def evaluate(args, model=None, data_loader=None):
+def evaluate(args, model=None, data_loader=None, dset_name="test"):
     # Load model
     if not model:
         model = pretrained.get_model(args).to(args.device)
@@ -45,20 +45,20 @@ def evaluate(args, model=None, data_loader=None):
         example = example[None, :]
         example = example.to(args.device)
         if args.device == "cpu":
-            _estimate_and_run_metrics(y=example, model=model, args=args, epoch=data_loader.epoch, example_ind=i)
+            _estimate_and_run_metrics(y=example, model=model, args=args, epoch=data_loader.epoch, example_ind=i, dset_name=dset_name)
         else:
             y_pred = get_pred(model, example, args)
             y_pred = y_pred.cpu()
             y = example.cpu()
-            _run_metrics(y=y, y_pred=y_pred, args=args, epoch=data_loader.epoch, sr=model.sample_rate, example_ind=i)
+            _run_metrics(y=y, y_pred=y_pred, args=args, epoch=data_loader.epoch, sr=model.sample_rate, example_ind=i, dset_name=dset_name)
 
 
-def _estimate_and_run_metrics(y, model, args, epoch, example_ind):
+def _estimate_and_run_metrics(y, model, args, epoch, example_ind, dset_name):
     y_pred = get_pred(model, y, args)
-    return _run_metrics(y, y_pred, args, sr=model.sample_rate, epoch=epoch, example_ind=example_ind)
+    return _run_metrics(y, y_pred, args, sr=model.sample_rate, epoch=epoch, example_ind=example_ind, dset_name=dset_name)
 
 
-def _run_metrics(y, y_pred, args, sr, epoch, example_ind):
+def _run_metrics(y, y_pred, args, sr, epoch, example_ind, dset_name):
     l1_loss = F.l1_loss(y_pred, y)
     y_pred = y_pred.numpy()[:, 0]
     y = y.numpy()[:, 0]
@@ -66,11 +66,11 @@ def _run_metrics(y, y_pred, args, sr, epoch, example_ind):
     if args.wandb:
         assert epoch, "epoch must not be None"
         wandb.log(
-            {f"prediction_{example_ind}": wandb.Audio(y_pred.flatten(), caption="prediction", sample_rate=sr)},
+            {f"{dset_name}_prediction_{example_ind}": wandb.Audio(y_pred.flatten(), caption=f"{dset_name}_prediction", sample_rate=sr)},
             step=epoch,
         )
         wandb.log({f"target_{example_ind}": wandb.Audio(y.flatten(), caption="target", sample_rate=sr)}, step=epoch)
-        wandb.log({f"Test_{example_ind} L1_loss": l1_loss}, step=epoch)
+        wandb.log({f"{dset_name}_{example_ind} L1_loss": l1_loss}, step=epoch)
 
 
 def main():

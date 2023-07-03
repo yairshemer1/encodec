@@ -22,6 +22,7 @@ from .balancer import Balancer
 from .evaluate import evaluate
 from .model import discriminator_loss, feature_loss, generator_loss, total_gen_loss
 from .stft_loss import MultiResolutionMelLoss
+from .adversarial_loss import GeneratorAdversarialLoss, DiscriminatorAdversarialLoss, FeatureMatchingLoss
 from .utils import bold, copy_state, pull_metric, serialize_model, swap_state, LogProgress
 
 logger = logging.getLogger(__name__)
@@ -64,6 +65,9 @@ class Solver(object):
         self.num_prints = args.num_prints  # Number of times to log per epoch
         self.args = args
         self.multi_res_mel_loss = MultiResolutionMelLoss().to(self.device)
+        self.losses = {"disc": DiscriminatorAdversarialLoss(),
+                       "gen": GeneratorAdversarialLoss(),
+                        "feat": FeatureMatchingLoss()}
         self._reset()
 
     def _serialize(self):
@@ -256,8 +260,9 @@ class Solver(object):
 
         logits_r, fmap_r = self.msd(y)
         logits_g, fmap_g = self.msd(y_pred)
-
-        l_g, l_feat = total_gen_loss(fmap_real=fmap_r, logits_fake=logits_g, fmap_fake=fmap_g, device=self.device)
+        l_feat = self.losses["feat"](fmap_r, fmap_g)
+        l_g = self.losses["gen"](logits_g)
+        # l_g, l_feat = total_gen_loss(fmap_real=fmap_r, logits_fake=logits_g, fmap_fake=fmap_g, device=self.device)
 
         losses = {"l_t": l_t, "l_f": l_f, "l_feat": l_feat, "l_g": l_g}
 
@@ -277,8 +282,9 @@ class Solver(object):
         is_train = "train" if not cross_valid else "valid"
         logits_r, fmaps_r = self.msd(y)
         logits_g, fmaps_g = self.msd(y_pred)
-        loss_disc_s, losses_disc_s_r, losses_disc_s_g = discriminator_loss(logits_r, logits_g)
-        loss_disc_s *= self.args.l_d
+        loss_disc_s = self.losses["disc"](logits_r, logits_g)
+        # loss_disc_s, losses_disc_s_r, losses_disc_s_g = discriminator_loss(logits_r, logits_g)
+        # loss_disc_s *= self.args.l_d
 
         if not cross_valid:
             prob = random.random()

@@ -1,6 +1,5 @@
 import torch
 from torch import nn
-from encodec.msstftd import MultiScaleSTFTDiscriminator
 
 
 class DiscriminatorAdversarialLoss(nn.Module):
@@ -45,29 +44,3 @@ class FeatureMatchingLoss(nn.Module):
 def loss_form_sanity_check(loss_tensor):
     assert loss_tensor.dim() == 0 and loss_tensor > 0
     pass
-
-
-def test():
-    disc = MultiScaleSTFTDiscriminator(filters=32)
-    x = torch.randn(1, 1, 24000)
-    x_hat = torch.randn(1, 1, 24000)
-
-    y_disc_r, fmap_r = disc(x)
-    y_disc_gen, fmap_gen = disc(x_hat)
-
-    gen_adv_crit = GeneratorAdversarialLoss()
-    gen_adv_loss = gen_adv_crit(y_disc_gen)
-
-    fm_crit = FeatureMatchingLoss()
-    fmatching_loss = fm_crit(fmap_r, fmap_gen)
-
-    disc_crit = DiscriminatorAdversarialLoss()
-    disc_loss = disc_crit(y_disc_r, y_disc_gen)
-    losses = {"gen_adv_loss": gen_adv_loss, "fmatching_loss": fmatching_loss, "disc_loss": disc_loss}
-    for l_name,l in losses.items():
-        print(f"{l_name}: {l}")
-        loss_form_sanity_check(l)
-
-
-if __name__ == "__main__":
-    test()

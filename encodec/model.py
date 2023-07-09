@@ -128,7 +128,7 @@ class EncodecModel(nn.Module):
         self,
         encoder: m.SEANetEncoder,
         decoder: m.SEANetDecoder,
-        # quantizer: qt.ResidualVectorQuantizer,
+        quantizer: qt.ResidualVectorQuantizer,
         target_bandwidths: tp.List[float] = [3.0, 6.0, 12.0, 24.0],
         sample_rate: int = 16_000,
         channels: int = 2,
@@ -141,7 +141,7 @@ class EncodecModel(nn.Module):
         self.bandwidth: tp.Optional[float] = None
         self.target_bandwidths = target_bandwidths
         self.encoder = encoder
-        # self.quantizer = quantizer
+        self.quantizer = quantizer
         self.decoder = decoder
         self.sample_rate = sample_rate
         self.channels = channels
@@ -150,9 +150,9 @@ class EncodecModel(nn.Module):
         self.overlap = overlap
         self.frame_rate = math.ceil(self.sample_rate / np.prod(self.encoder.ratios))
         self.name = name
-        # self.bits_per_codebook = int(math.log2(self.quantizer.bins))
-        # assert 2 ** self.bits_per_codebook == self.quantizer.bins, \
-        #     "quantizer bins must be a power of 2."
+        self.bits_per_codebook = int(math.log2(self.quantizer.bins))
+        assert 2 ** self.bits_per_codebook == self.quantizer.bins, \
+            "quantizer bins must be a power of 2."
 
     @property
     def segment_length(self) -> tp.Optional[int]:
@@ -223,22 +223,17 @@ class EncodecModel(nn.Module):
         self.postprocess(out, scale)
         return out
 
-    def forward(self, x: torch.Tensor) -> qt.QuantizedResult:
-        assert x.dim() == 3
-        length = x.shape[-1]
+    def forward(self, x: torch.Tensor):
+
         x, scale = self.preprocess(x)
 
         emb = self.encoder(x)
-        # q_res = self.quantizer(emb, self.frame_rate)
-        out = self.decoder(emb)
+        out = self.quantizer(emb, self.frame_rate, self.bandwidth)
+        pred = self.decoder(out.quantized)[:, :, :x.shape[-1]]
 
-        # remove extra padding added by the encoder and decoder
-        assert out.shape[-1] >= length, (out.shape[-1], length)
-        out = out[..., :length]
+        pred = self.postprocess(pred, scale)
 
-        out = self.postprocess(out, scale)
-
-        return out
+        return pred, out.penalty
 
     def postprocess(self, x: torch.Tensor, scale: tp.Optional[torch.Tensor] = None) -> torch.Tensor:
         if scale is not None:

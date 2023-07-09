@@ -7,6 +7,7 @@
 # authors: adiyoss and adefossez
 import itertools
 import logging
+import math
 import os
 import wandb
 import hydra
@@ -40,14 +41,21 @@ def run(args):
     # model = Demucs(**args.demucs, sample_rate=args.sample_rate)
     encoder = m.SEANetEncoder(channels=1, dimension=args.dimension, norm="weight_norm", causal=True)
     decoder = m.SEANetDecoder(channels=1, dimension=args.dimension, norm="weight_norm", causal=True)
-    # quantizer = qt.ResidualVectorQuantizer().to(args.device)
+    target_bandwidths = [6.0]
+    n_q = int(1000 * target_bandwidths[-1] // (math.ceil(args.sample_rate / encoder.hop_length) * 10))
+    quantizer = qt.ResidualVectorQuantizer(
+        dimension=encoder.dimension,
+        n_q=n_q,
+        bins=1024,
+    )
     model = EncodecModel(
         encoder,
         decoder,
-        # quantizer=quantizer,
+        quantizer=quantizer,
         normalize=False,
         segment=None,
     ).to(args.device)
+    model.set_target_bandwidth(6.0)
     msd = MultiScaleDiscriminator(filters=32).to(args.device)
     if args.show:
         logger.info(model)
@@ -86,8 +94,8 @@ def run(args):
         model.cuda()
 
     # optimizer
-    optimizer_gen = torch.optim.Adam(model.parameters(), lr=args.lr_gen, betas=(args.beta1, args.beta2))
-    optimizer_disc = torch.optim.Adam(msd.parameters(), lr=args.lr_disc, betas=(args.beta1, args.beta2))
+    optimizer_gen = torch.optim.AdamW(model.parameters(), lr=args.lr_gen, betas=(args.beta1, args.beta2))
+    optimizer_disc = torch.optim.AdamW(msd.parameters(), lr=args.lr_disc, betas=(args.beta1, args.beta2))
 
     # Construct Solver
     solver = Solver(

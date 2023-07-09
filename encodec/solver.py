@@ -41,8 +41,8 @@ class Solver(object):
         )
         self.optimizer_gen = optimizer_gen
         self.optimizer_disc = optimizer_disc
-        self.scheduler_gen = torch.optim.lr_scheduler.ExponentialLR(optimizer_gen, gamma=args.lr_decay, last_epoch=-1)
-        self.scheduler_disc = torch.optim.lr_scheduler.ExponentialLR(optimizer_disc, gamma=args.lr_decay, last_epoch=-1)
+        # self.scheduler_gen = torch.optim.lr_scheduler.ExponentialLR(optimizer_gen, gamma=args.lr_decay, last_epoch=-1)
+        # self.scheduler_disc = torch.optim.lr_scheduler.ExponentialLR(optimizer_disc, gamma=args.lr_decay, last_epoch=-1)
 
         # Training config
         self.device = args.device
@@ -76,8 +76,8 @@ class Solver(object):
         package["msd"] = serialize_model(self.msd)
         package["optimizer_gen"] = self.optimizer_gen.state_dict()
         package["optimizer_disc"] = self.optimizer_disc.state_dict()
-        package["scheduler_gen"] = self.scheduler_gen.state_dict()
-        package["scheduler_disc"] = self.scheduler_disc.state_dict()
+        # package["scheduler_gen"] = self.scheduler_gen.state_dict()
+        # package["scheduler_disc"] = self.scheduler_disc.state_dict()
         package["history"] = self.history
         package["best_state"] = self.best_state
         package["args"] = self.args
@@ -120,8 +120,8 @@ class Solver(object):
             if "optimizer_gen" in package and "optimizer_disc" in package and not load_best:
                 self.optimizer_gen.load_state_dict(package["optimizer_gen"])
                 self.optimizer_disc.load_state_dict(package["optimizer_disc"])
-                self.scheduler_gen.load_state_dict(package["scheduler_gen"])
-                self.scheduler_disc.load_state_dict(package["scheduler_disc"])
+                # self.scheduler_gen.load_state_dict(package["scheduler_gen"])
+                # self.scheduler_disc.load_state_dict(package["scheduler_disc"])
             if keep_history:
                 self.history = package["history"]
             self.best_state = package["best_state"]
@@ -179,8 +179,8 @@ class Solver(object):
                 "train": train_loss,
                 "valid": valid_loss,
                 "best": best_loss,
-                "lr_gen": self.scheduler_gen.get_last_lr()[0],
-                "lr_disc": self.scheduler_disc.get_last_lr()[0],
+                # "lr_gen": self.scheduler_gen.get_last_lr()[0],
+                # "lr_disc": self.scheduler_disc.get_last_lr()[0],
             }
             # Save the best model
             if valid_loss == best_loss:
@@ -214,9 +214,6 @@ class Solver(object):
                     self._serialize()
                     logger.debug("Checkpoint saved to %s", self.checkpoint_file.resolve())
 
-            self.scheduler_disc.step()
-            self.scheduler_gen.step()
-
     def _run_one_epoch(self, epoch, losses_record, cross_valid=False):
         total_loss = 0
         data_loader = self.tr_loader if not cross_valid else self.cv_loader
@@ -227,16 +224,10 @@ class Solver(object):
         logprog = LogProgress(logger, data_loader, updates=self.num_prints, name=name)
         for i, data in enumerate(logprog):
             y = data.to(self.device)
-            y_pred = self.dmodel(y)
-            # y_pred = quant_res.quantized
+            y_pred, commit_loss = self.dmodel(y)
 
-            # commitment_loss = torch.tensor(0.0).to(self.device)
-            # if quant_res.penalty is not None and quant_res.penalty.requires_grad:
-            #     commitment_loss = quant_res.penalty
-            # if commitment_loss.requires_grad:
-            #     commitment_loss.backward(retain_graph=True)
-            #     losses_record["Commitment loss"].append(commitment_loss.item())
-
+            if commit_loss.requires_grad:
+                commit_loss.backward(retain_graph=True)
             # apply a loss function after each layer
             with torch.autograd.set_detect_anomaly(True):
                 y_pred_detach = torch.clone(y_pred).detach()
@@ -248,6 +239,7 @@ class Solver(object):
                 )
 
             logprog.update(loss=format(total_loss / (i + 1), ".5f"))
+            losses_record[f"commit_loss"].append(commit_loss.item())
 
         train_loss = sum([np.mean(losses_record[loss]) for loss in losses_record])
         return losses_record, train_loss
@@ -275,6 +267,7 @@ class Solver(object):
             self.optimizer_gen.zero_grad()
             self.balancer.backward(losses=losses, input=y_pred)
             self.optimizer_gen.step()
+            # self.scheduler_gen.step()
 
         return losses_record
 
@@ -292,6 +285,7 @@ class Solver(object):
                 self.optimizer_disc.zero_grad()
                 loss_disc_s.backward()
                 self.optimizer_disc.step()
+                # self.scheduler_disc.step()
 
         losses_record[f"{is_train}_l_d"].append(loss_disc_s.item())
 

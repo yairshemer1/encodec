@@ -66,7 +66,7 @@ class Audioset:
 
     @staticmethod
     def _load_sample_meta(f_path, sample_rate, segment_len):
-        sr, dur = librosa.get_samplerate(f_path), librosa.get_duration(filename=f_path)
+        sr, dur = librosa.get_samplerate(f_path), librosa.get_duration(path=f_path)
         assert sr == sample_rate
         if int(sr * dur) > segment_len:
             return f_path, int(sr * dur)

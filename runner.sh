@@ -8,4 +8,4 @@
 #SBATCH -c4
 #SBATCH -o /cs/usr/yair.shemer/AudioLab/encodec/slurm_logs/%j.out
 
-/cs/labs/adiyoss/yair.shemer/venv/encodec/bin/python /cs/usr/yair.shemer/AudioLab/encodec/train.py exp_name="after_fix_model_forward_fixed_losses" batch_size=80 dset=valentini
+/cs/labs/adiyoss/yair.shemer/venv/encodec/bin/python /cs/usr/yair.shemer/AudioLab/encodec/train.py exp_name="rvq_from_scratch_galil_data_reader" batch_size=32 dset=valentini

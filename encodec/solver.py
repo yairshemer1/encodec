@@ -203,9 +203,7 @@ class Solver(object):
                 for loss in losses_record:
                     wandb.log({loss: np.mean(losses_record[loss])}, step=epoch)
                 wandb.log(metrics, step=epoch)
-                layers = self.model.quantizer.vq.layers
-                for layer in layers:
-                    wandb.Table(dataframe=pd.DataFrame(layer.codebook.cpu().detach().numpy()))
+
             self.history.append(metrics)
             info = " | ".join(f"{k.capitalize()} {v:.05g}" for k, v in metrics.items())
             logger.info("-" * 70)
@@ -229,6 +227,7 @@ class Solver(object):
         for i, data in enumerate(logprog):
             y = data.to(self.device)
             y_pred, commit_loss = self.dmodel(y)
+            import ipdb; ipdb.set_trace()
 
             if commit_loss.requires_grad:
                 commit_loss.backward(retain_graph=True)

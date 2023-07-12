@@ -38,11 +38,10 @@ def run(args):
     # torch also initialize cuda seed if available
     torch.manual_seed(args.seed)
 
-    # model = Demucs(**args.demucs, sample_rate=args.sample_rate)
-    encoder = m.SEANetEncoder(channels=1, dimension=args.dimension, norm="weight_norm", causal=True)
-    decoder = m.SEANetDecoder(channels=1, dimension=args.dimension, norm="weight_norm", causal=True)
+    encoder = m.SEANetEncoder(channels=args.channels, dimension=args.dimension, norm="weight_norm", causal=args.causal)
+    decoder = m.SEANetDecoder(channels=args.channels, dimension=args.dimension, norm="weight_norm", causal=args.causal)
     target_bandwidths = [6.0]
-    # n_q = int(1000 * target_bandwidths[-1] // (math.ceil(args.sample_rate / encoder.hop_length) * 10))
+    n_q = int(1000 * target_bandwidths[-1] // (math.ceil(args.sample_rate / encoder.hop_length) * 10))
     quantizer = qt.ResidualVectorQuantizer(
         dimension=encoder.dimension,
         n_q=args.n_q,
@@ -52,7 +51,10 @@ def run(args):
         encoder,
         decoder,
         quantizer=quantizer,
-        normalize=False,
+        target_bandwidths=target_bandwidths,
+        sample_rate=args.sample_rate,
+        normalize=args.normalize,
+        channels=args.channels,
         segment=None,
     ).to(args.device)
     model.set_target_bandwidth(6.0)

@@ -129,9 +129,9 @@ class EncodecModel(nn.Module):
         encoder: m.SEANetEncoder,
         decoder: m.SEANetDecoder,
         quantizer: qt.ResidualVectorQuantizer,
-        target_bandwidths: tp.List[float] = [3.0, 6.0, 12.0, 24.0],
-        sample_rate: int = 16_000,
-        channels: int = 2,
+        target_bandwidths: tp.List[float],
+        sample_rate: int,
+        channels: int,
         normalize: bool = False,
         segment: tp.Optional[float] = None,
         overlap: float = 0.01,
@@ -224,15 +224,24 @@ class EncodecModel(nn.Module):
         return out
 
     def forward(self, x: torch.Tensor):
+        length = x.shape[-1]
+        duration = length / self.sample_rate
+        assert self.segment is None or duration <= 1e-5 + self.segment
 
-        x, scale = self.preprocess(x)
+        if self.normalize:
+            mono = x.mean(dim=1, keepdim=True)
+            volume = mono.pow(2).mean(dim=2, keepdim=True).sqrt()
+            scale = 1e-8 + volume
+            x = x / scale
+            scale = scale.view(-1, 1)
+        else:
+            scale = None
 
         emb = self.encoder(x)
-        out = self.quantizer(emb, self.frame_rate, self.bandwidth)
+        out = self.quantizer.forward(emb, self.frame_rate, self.bandwidth)
         pred = self.decoder(out.quantized)[:, :, :x.shape[-1]]
-
-        pred = self.postprocess(pred, scale)
-
+        if scale is not None:
+            pred = pred * scale.view(-1, 1, 1)
         return pred, out.penalty
 
     def postprocess(self, x: torch.Tensor, scale: tp.Optional[torch.Tensor] = None) -> torch.Tensor:

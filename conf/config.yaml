@@ -9,6 +9,9 @@ convert: true
 segment: 1
 stride: 1    # in seconds, how much to stride between training examples
 pad: true   # if training sample is too short, pad it
+channels: 1
+causal: false
+normalize: false
 
 # Dataset Augmentation
 remix: false   # remix noise and clean

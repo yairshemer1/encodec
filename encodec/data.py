@@ -81,8 +81,7 @@ class CleanSet:
         with open(clean_json, "r") as f:
             clean = json.load(f)
 
-        kw = {"length": length, "stride": stride, "pad": pad, "sample_rate": sample_rate, "convert": convert}
-        self.clean_set = Audioset(clean, **kw)
+        self.clean_set = Audioset(clean)
 
     def __getitem__(self, index):
         return self.clean_set[index]

@@ -10,6 +10,7 @@ import numpy as np
 import wandb
 import json
 import logging
+import pandas as pd
 from pathlib import Path
 import os
 import time
@@ -202,6 +203,9 @@ class Solver(object):
                 for loss in losses_record:
                     wandb.log({loss: np.mean(losses_record[loss])}, step=epoch)
                 wandb.log(metrics, step=epoch)
+                layers = self.model.quantizer.vq.layers
+                for layer in layers:
+                    wandb.Table(dataframe=pd.DataFrame(layer.codebook.cpu().detach().numpy()))
             self.history.append(metrics)
             info = " | ".join(f"{k.capitalize()} {v:.05g}" for k, v in metrics.items())
             logger.info("-" * 70)

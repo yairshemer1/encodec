@@ -20,6 +20,8 @@ from multiprocessing import Pool
 import torchaudio
 from torch.nn import functional as F
 import sys
+
+sys.path.append("/content/drive/My Drive/AudioLab/encodec")
 from encodec.dsp import convert_audio
 
 Info = namedtuple("Info", ["length", "sample_rate", "channels"])
@@ -53,19 +55,19 @@ def find_audio_files(path, exts=[".wav"], progress=True):
 
 
 class Audioset:
-    def __init__(self, audio_dir=None, expected_sr=16_000, segment_len=32_000, saved_path=None):
+    def __init__(self, files=None, sample_rate=16_000, segment_len=32_000, saved_path=None):
         self.index_file = []
         self.segment_len = segment_len
-        files = list(Path(f'{audio_dir}').rglob('*.wav'))
-        load_ = partial(Audioset._load_sample_meta, expected_sr=expected_sr, segment_len=segment_len)
+        files = [file for file, length in files]
+        load_ = partial(Audioset._load_sample_meta, sample_rate=sample_rate, segment_len=segment_len)
         with Pool() as p:
             self.index_file = list(tqdm(p.imap(load_, files), total=len(files)))
         self.index_file = [x for x in self.index_file if x is not None]
 
     @staticmethod
-    def _load_sample_meta(f_path, expected_sr, segment_len):
+    def _load_sample_meta(f_path, sample_rate, segment_len):
         sr, dur = librosa.get_samplerate(f_path), librosa.get_duration(filename=f_path)
-        assert sr == expected_sr
+        assert sr == sample_rate
         if int(sr * dur) > segment_len:
             return f_path, int(sr * dur)
 

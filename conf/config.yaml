@@ -63,6 +63,7 @@ epochs: 500
 batch_size: 64
 disc_step_prob: 0.6667
 dimension: 256
+n_q: 4
 
 # Loss function factors
 l_t: 0.1

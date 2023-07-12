@@ -42,10 +42,10 @@ def run(args):
     encoder = m.SEANetEncoder(channels=1, dimension=args.dimension, norm="weight_norm", causal=True)
     decoder = m.SEANetDecoder(channels=1, dimension=args.dimension, norm="weight_norm", causal=True)
     target_bandwidths = [6.0]
-    n_q = int(1000 * target_bandwidths[-1] // (math.ceil(args.sample_rate / encoder.hop_length) * 10))
+    # n_q = int(1000 * target_bandwidths[-1] // (math.ceil(args.sample_rate / encoder.hop_length) * 10))
     quantizer = qt.ResidualVectorQuantizer(
         dimension=encoder.dimension,
-        n_q=n_q,
+        n_q=args.n_q,
         bins=1024,
     )
     model = EncodecModel(

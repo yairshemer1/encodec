@@ -10,7 +10,6 @@ import numpy as np
 import wandb
 import json
 import logging
-import pandas as pd
 from pathlib import Path
 import os
 import time
